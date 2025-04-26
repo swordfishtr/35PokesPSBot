@@ -56,6 +56,7 @@ export class BattleFactory {
 		this.debug = debug ?? false;
 		this.receive = this.receive.bind(this);
 		this.newBots = this.newBots.bind(this);
+		this.shutdown = this.shutdown.bind(this);
 		this.tryMatchmaking = this.tryMatchmaking.bind(this);
 		this.prepBattle = this.prepBattle.bind(this);
 		this.genBattle = this.genBattle.bind(this);
@@ -77,8 +78,7 @@ export class BattleFactory {
 		}
 
 		if(this.disconnections > 2) {
-			clearInterval(this.#queueInterval);
-			if(this.onShutdown) this.onShutdown();
+			this.shutdown();
 			throw new Error('This instance of BattleFactory has disconnected too many times, refusing to continue.');
 		}
 
@@ -109,6 +109,17 @@ export class BattleFactory {
 			const i2 = this.queueBan.indexOf(user2);
 			if(i2 !== -1) this.queueBan.splice(i2, 1);
 		});
+	}
+
+	shutdown() {
+		delete this.bot1.onDisconnect;
+		delete this.bot2.onDisconnect;
+
+		this.bot1.disconnect();
+		this.bot2.disconnect();
+
+		clearInterval(this.#queueInterval);
+		if(this.onShutdown) this.onShutdown();
 	}
 
 	onShutdown?: () => void;
