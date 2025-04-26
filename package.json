@@ -1,0 +1,19 @@
+{
+  "name": "35pokespsbot",
+  "version": "1.0.0",
+  "description": "Pokemon Showdown bot for the 35Pokes community",
+  "type": "module",
+  "main": "dist/Controller",
+  "scripts": {
+    "build": "tsc"
+  },
+  "author": "demirab1",
+  "license": "GPL-3.0-only",
+  "devDependencies": {
+    "@types/node": "^22.14.1",
+    "typescript": "5.7.3"
+  },
+  "dependencies": {
+    "@js-temporal/polyfill": "^0.5.1"
+  }
+}

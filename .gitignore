@@ -1,0 +1,5 @@
+node_modules
+dist
+tmp/**/*
+config.json
+npm-debug.log

@@ -1,0 +1,15 @@
+{
+	"compilerOptions": {
+		"module": "NodeNext",
+		"moduleResolution": "nodenext",
+		"esModuleInterop": true,
+		"alwaysStrict": true,
+		"strict": true,
+		"outDir": "dist",
+		"resolveJsonModule": true
+	},
+	"include": [
+		"src/*",
+		"../pokemon-showdown/dist/sim/global-types.d.ts"
+	]
+}

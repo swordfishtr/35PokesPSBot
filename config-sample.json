@@ -1,0 +1,16 @@
+{
+	"features": {
+		"debug": true,
+		"battlefactory": true
+	},
+	"logins": [
+		{
+			"name": "",
+			"pass": ""
+		},
+		{
+			"name": "",
+			"pass": ""
+		}
+	]
+}
