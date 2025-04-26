@@ -1,6 +1,4 @@
-// Entry point
-
-process.chdir(__dirname);
+process.chdir(import.meta.dirname);
 console.log('=== Welcome to 35Pokes Showdown bots! ===\n');
 
 try {

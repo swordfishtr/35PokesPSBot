@@ -176,10 +176,10 @@ export class PSBot {
 		this.log('Login successful.');
 	}
 
-	/** Newlines are not allowed to be sent. */
 	send(msg: string) {
 		this.ensureConnected();
-		if(msg.includes('\n')) throw new Error('Newlines are not allowed to be sent.');
+		if(msg.includes('\n') && !msg.includes('!code '))
+			throw new Error('Newlines without !code are not allowed to be sent.');
 		this.log(msg, LogSign.OUT);
 		this.#ws!.send(JSON.stringify([msg]));
 	}

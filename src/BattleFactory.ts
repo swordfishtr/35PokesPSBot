@@ -3,7 +3,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { PSBot } from './PSBot.js';
 import PokemonShowdown from '../../pokemon-showdown/dist/sim/index.js';
 const { Dex, Teams, TeamValidator, toID } = PokemonShowdown;
-import { Auth, LogSign, Predicate, PredicateVar, RejectReason } from './globals.js';
+import { Auth, FactorySet, LogSign, PokemonStat, Predicate, PredicateVar, RejectReason } from './globals.js';
 
 interface Battle {
 	format: string,
@@ -37,7 +37,7 @@ export class BattleFactory {
 	bot2: PSBot;
 
 	// factory-sets.json
-	factoryFormats: any;
+	factorySets: any;
 
 	factoryGenerator: any;
 
@@ -54,6 +54,8 @@ export class BattleFactory {
 
 		this.authSlots = authSlots;
 		this.debug = debug ?? false;
+		this.loadFactory();
+
 		this.receive = this.receive.bind(this);
 		this.newBots = this.newBots.bind(this);
 		this.shutdown = this.shutdown.bind(this);
@@ -82,8 +84,8 @@ export class BattleFactory {
 			throw new Error('This instance of BattleFactory has disconnected too many times, refusing to continue.');
 		}
 
-		this.bot1 = new PSBot('Primary Bot', this.debug);
-		this.bot2 = new PSBot('Secondary Bot', this.debug);
+		this.bot1 = new PSBot('35 Factory Primary Bot', this.debug);
+		this.bot2 = new PSBot('35 Factory Secondary Bot', this.debug);
 
 		this.bot1.onDisconnect = this.newBots;
 		this.bot2.onDisconnect = this.newBots;
@@ -161,7 +163,7 @@ export class BattleFactory {
 		})
 		.then(() => {
 			if(!battle.format) {
-				const formats = Object.keys(this.factoryFormats);
+				const formats = Object.keys(this.factorySets);
 				battle.format = formats[Math.floor(Math.random() * formats.length)];
 			}
 			this.factoryGenerator.factoryTier = battle.format;
@@ -221,7 +223,7 @@ export class BattleFactory {
 	}
 
 	loadFactory() {
-		this.factoryFormats = require('../../35PokesIndex/factory-sets.json');
+		this.factorySets = require('../../35PokesIndex/factory-sets.json');
 	}
 
 	receive(msg: string) {
@@ -230,28 +232,40 @@ export class BattleFactory {
 		if(this.#BOTCMD_2(msg)) return this.respondBR(msg);
 	}
 
-	//|/pm demirab2, asd
 	respondPM(msg: string) {
 		const data = msg.split('|', 5);
 		const user = toID(data[2].slice(1));
-		const fields = data[4].split(' ').map(toID);
+		const fields = data[4].split(' ');
 
-		const out = this.runCommand(user, fields);
-		if(out) this.bot1.send(`|/pm ${user}, ${out}`);
+		const out = this.runCommand(user, ...fields);
+		if(!out) return;
+
+		const outLines = out.split('\n');
+		if(outLines.length === 1) this.bot1.send(`|/pm ${user}, ${out}`);
+
+		else {
+			outLines[0] = `!code ${outLines[0]}`;
+			const outCode = outLines.map((x) => `/pm ${user}, ${x}`).join('\n');
+			this.bot1.send(`|${outCode}`);
+		}
 	}
 
 	respondBR(msg: string) {
 		const data = msg.split('|', 4);
 		const room = data[0].slice(1, -1);
 		const user = toID(data[2].slice(1));
-		const fields = data[3].slice(1).split(' ').map(toID);
+		const fields = data[3].slice(1).split(' ');
 
-		const out = this.runCommand(user, fields);
-		if(out) this.bot1.send(`${room}|${out}`);
+		const out = this.runCommand(user, ...fields);
+		if(!out) return;
+
+		if(out.includes('\n')) this.bot1.send(`${room}|!code ${out}`);
+		else this.bot1.send(`${room}|${out}`);
 	}
 
-	runCommand(user: string, fields: string[]): string {
-		switch(fields[0]) {
+	// Refer to default for expected fields
+	runCommand(user: string, ...fields: string[]): string {
+		switch(toID(fields[0])) {
 			case 'in':
 			case 'can': {
 				if(this.queue.includes(user)) return 'You are already in the matchmaking queue.';
@@ -280,15 +294,35 @@ export class BattleFactory {
 			case 'bf':
 			case 'set':
 			case 'sets': {
-				// set info
-				return 'To be implemented.';
+				if(!fields[2]) return 'Provide a format in your query.';
+				if(!fields[2].endsWith('.txt')) fields[2] += '.txt';
+				if(!(fields[2] in this.factorySets)) return 'Format not found. Check your syntax, it should be like ```2025/2025_04```';
+				fields[1] = toID(fields[1]);
+				if(!(fields[1] in this.factorySets[fields[2]])) return 'Species not found in format. Try including or excluding forme suffix.';
+				const data = this.factorySets[fields[2]][fields[1]];
+				let buf = `${fields[1]} weight ${data.weight}`;
+				for(const x of data.sets as FactorySet[]) {
+					const evs = Object.entries(x.evs).filter((y) => y[1] > 0).map((y) => `${y[1]} ${y[0]}`).join(' / ');
+					const ivs = Object.entries(x.ivs).filter((y) => y[1] < 31).map((y) => `${y[1]} ${y[0]}`).join(' / ');
+					buf += '\n\n';
+					buf += `${x.weight}% @ ${x.item.join(' / ')}\n`;
+					buf += `Ability: ${x.ability.join(' / ')}\n`;
+					if(evs) buf += `EVs: ${evs}\n`;
+					buf += `${x.nature.join(' / ')} Nature\n`;
+					if(ivs) buf += `IVs: ${ivs}\n`;
+					for(const y of x.moves) {
+						buf += `- ${y.join(' / ')}\n`;
+					}
+					buf = buf.slice(0, -1);
+				}
+				return buf;
 			}
-			default: return 'Commands (prefix ; in battle rooms): ' +
-			'```in```: Find match. ' +
-			'```out```: Exit queue. ' +
-			'```chal``` ```user``` ```format?```: Challenge (chal back to accept). ' +
-			'```unchal```: Withdraw challenge. ' +
-			'```bf``` ```species``` ```format```: Query factory sets. ';
+			default: return '35 Factory Commands (prefix ; in battle rooms):\n\n' +
+			'in: Enter the matchmaking queue. Alias: can\n\n' +
+			'out: Exit the matchmaking queue. Alias: leave, exit\n\n' +
+			'chal user format?: Challenge user to format (user must challenge back to accept) (user is not notified). Alias: challenge\n\n' +
+			'unchal: Withdraw your active challenge. Alias: unchallenge\n\n' +
+			'bf species format: Query sets in format. Alias: set, sets';
 		}
 	}
 

@@ -28,3 +28,18 @@ export enum RejectReason {
 	TIMEOUT = 'Timed out.',
 	DISCONNECT = 'Disconnected.'
 }
+
+export type PokemonStat = 'hp' | 'atk' | 'def' | 'spa' | 'spd' | 'spe';
+
+export interface FactorySet {
+	species: string,
+	item: string[],
+	ability: string[],
+	gender: string,
+	nature: string[],
+	evs: { [k in PokemonStat]: number },
+	ivs: { [k in PokemonStat]: number },
+	moves: string[][],
+	teraType: string,
+	weight: number
+}

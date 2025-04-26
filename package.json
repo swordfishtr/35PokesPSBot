@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Pokemon Showdown bot for the 35Pokes community",
   "type": "module",
-  "main": "dist/Controller",
+  "main": "src/PSBot.ts",
   "scripts": {
     "build": "tsc"
   },
