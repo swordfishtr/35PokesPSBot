@@ -10,7 +10,7 @@ interface Listener {
 	description: string
 }
 
-export class PSBot {
+export default class PSBot {
 
 	// #region Constants
 

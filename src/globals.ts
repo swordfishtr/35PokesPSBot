@@ -1,6 +1,12 @@
+import path from 'path';
+
 export interface Auth {
 	name: string,
 	pass: string
+}
+
+export interface Services {
+	BattleFactory?: import('./BattleFactory').default
 }
 
 /**
@@ -43,3 +49,11 @@ export interface FactorySet {
 	teraType: string,
 	weight: number
 }
+
+export const PATH_CONFIG = path.join(import.meta.dirname, '..', 'config.json');
+
+export const PATH_PS_INDEX = path.join(import.meta.dirname, '..', '..', 'pokemon-showdown', 'dist', 'sim', 'index.js');
+
+export const PATH_PS_FACTORYSETS = path.join(
+	import.meta.dirname, '..', '..', 'pokemon-showdown', 'dist', 'data', 'random-battles', 'gen9', 'factory-sets.json'
+);

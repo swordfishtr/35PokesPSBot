@@ -1,9 +1,10 @@
+import fs from 'node:fs';
 import { styleText } from 'node:util';
 import { Temporal } from '@js-temporal/polyfill';
-import { PSBot } from './PSBot.js';
+import PSBot from './PSBot.js';
 import PokemonShowdown from '../../pokemon-showdown/dist/sim/index.js';
 const { Dex, Teams, TeamValidator, toID } = PokemonShowdown;
-import { Auth, FactorySet, LogSign, PokemonStat, Predicate, PredicateVar, RejectReason } from './globals.js';
+import { Auth, FactorySet, LogSign, Predicate, PredicateVar, RejectReason } from './globals.js';
 
 interface Battle {
 	format: string,
@@ -18,7 +19,7 @@ interface BattleSide {
 
 // this assumes everything (like showdown, metaindex, config.json) is set up, which the controller will ensure.
 // if either bot disconnects, things like challenging can get stuck so we should start over until a more efficient solution is found.
-export class BattleFactory {
+export default class BattleFactory {
 
 	// zero-based, determined by Controller
 	readonly authSlots: [number, number];
@@ -67,7 +68,7 @@ export class BattleFactory {
 		this.#queueInterval = setInterval(this.tryMatchmaking, 5 * 1000);
 	}
 
-	newBots() {
+	async newBots() {
 		// This is the only place where the bots can be undefined.
 		if(this.bot1 && this.bot2) {
 			this.disconnections++;
@@ -92,12 +93,12 @@ export class BattleFactory {
 
 		this.bot1.onMessage = this.receive;
 
-		const { logins } = require('../config.json');
+		const { logins } = (await import('../config.json', { with: { type: "json" } })).default;
 		
-		return this.bot1.connect()
-		.then(() => this.bot1.login(logins[this.authSlots[0]]))
-		.then(() => this.bot2.connect())
-		.then(() => this.bot2.login(logins[this.authSlots[1]]));
+		await this.bot1.connect();
+		await this.bot1.login(logins[this.authSlots[0]]);
+		await this.bot2.connect();
+		await this.bot2.login(logins[this.authSlots[1]]);
 	}
 
 	tryMatchmaking() {
@@ -222,8 +223,8 @@ export class BattleFactory {
 		});
 	}
 
-	loadFactory() {
-		this.factorySets = require('../../35PokesIndex/factory-sets.json');
+	async loadFactory() {
+		this.factorySets = (await import('../../35PokesIndex/factory-sets.json', { with: { type: "json" } })).default;
 	}
 
 	receive(msg: string) {
