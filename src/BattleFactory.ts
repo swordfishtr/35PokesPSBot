@@ -49,6 +49,8 @@ export default class BattleFactory {
 
 	factoryValidator: any;
 
+	readonly teamErrors: string[] = [];
+
 	readonly chalcode = 'gen9nationaldex35pokes@@@+allpokemon,+unobtainable,+past,+shedtail,+tangledfeet';
 
 	onShutdown?: () => void;
@@ -179,7 +181,8 @@ export default class BattleFactory {
 		buf += `factoryGenerator: ${this.factoryGenerator ? 'loaded' : 'missing'}\n`;
 		buf += `factoryValidator: ${this.factoryValidator ? 'loaded' : 'missing'}\n`;
 		buf += `bot1 listeners: ${this.bot1?.ls.map((x) => x.description).join(', ')}\n`;
-		buf += `bot2 listeners: ${this.bot2?.ls.map((x) => x.description).join(', ')}`;
+		buf += `bot2 listeners: ${this.bot2?.ls.map((x) => x.description).join(', ')}\n`;
+		buf += `teamErrors: ${this.teamErrors.join(';\n')}`;
 		return buf;
 	}
 
@@ -210,15 +213,17 @@ export default class BattleFactory {
 			this.factoryGenerator.factoryTier = battle.format;
 			battle.isRandom = !format;
 
-			const team1 = this.factoryGenerator.getTeam();
-			const problems1 = this.factoryValidator.baseValidateTeam(team1);
-			if(problems1?.length) throw new Error(JSON.stringify(problems1));
-			battle.side1.team = Teams.pack(team1);
-
-			const team2 = this.factoryGenerator.getTeam();
-			const problems2 = this.factoryValidator.baseValidateTeam(team2);
-			if(problems2?.length) throw new Error(JSON.stringify(problems2));
-			battle.side2.team = Teams.pack(team2);
+			const teams: any[] = [];
+			while(teams.length < 2) {
+				const team = this.factoryGenerator.getTeam();
+				const problems: string[] | null = this.factoryValidator.baseValidateTeam(team);
+				if(problems?.length) this.teamErrors.push(problems.join(', '));
+				// hardcode max 20 errors
+				if(this.teamErrors.length >= 20) throw new Error(`Too many validator errors:\n${this.teamErrors.join(';\n')}`);
+				teams.push(team);
+			}
+			battle.side1.team = Teams.pack(teams[0]);
+			battle.side2.team = Teams.pack(teams[1]);
 
 			return battle;
 		})
