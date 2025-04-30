@@ -71,7 +71,7 @@ export default class BattleFactory {
 
 	async init() {
 		if(this.#state !== State.NEW) throw new Error();
-		this.factorySets = (await import('../../35PokesIndex/factory-sets.json', { with: { type: "json" } })).default;
+		this.factorySets = (await import('../../pokemon-showdown/dist/data/random-battles/gen9/factory-sets.json', { with: { type: "json" } })).default;
 		const { debug } = (await import('../config.json', { with: { type: "json" } })).default.battleFactory;
 		this.debug = !!debug;
 		this.#state = State.INIT;
@@ -118,17 +118,44 @@ export default class BattleFactory {
 		this.#state = State.OFF;
 	}
 
-	tryMatchmaking() {
+	async tryMatchmaking() {
 		if(this.#state !== State.ON) throw new Error();
 		if(this.queue.length < 2) return;
 
-		const players = this.queue.splice(0, 2);
-		return this.prepBattle(players[0], players[1]).then(this.genBattle).finally(() => {
+		const players = this.queue.slice(0, 2);
+		let battle: Battle | undefined;
+
+		// Making sure both sides are online.
+		try {
+			battle = await this.prepBattle(players[0], players[1]);
+		}
+		catch(err) {
+			if(typeof err !== 'string' || Object.values(RejectReason).includes(err as RejectReason)) throw err;
+			// Offline user, remove them from queue.
 			for(const player of players) {
-				const i = this.queueBan.indexOf(player);
-				if(i !== -1) this.queueBan.splice(i, 1);
+				if(err.includes(`"userid":"${player}"`)) {
+					const i = this.queue.indexOf(player);
+					this.queue.splice(i, 1);
+					break;
+				}
 			}
-		});
+		}
+		if(!battle) return;
+
+		// To prevent matchmaking spam, players are only allowed to be in 1 game at a time.
+		this.queueBan.push(...players);
+		for(const player of players) {
+			const i = this.queue.indexOf(player);
+			if(i !== -1) this.queue.splice(i, 1);
+		}
+
+		// Goes on until the battle ends. If this throws, the bot should stop.
+		await this.genBattle(battle);
+
+		for(const player of players) {
+			const i = this.queueBan.indexOf(player);
+			if(i !== -1) this.queueBan.splice(i, 1);
+		}
 	}
 
 	log(msg: string, sign: Extract<LogSign, LogSign.ERR | LogSign.INFO | LogSign.WARN>) {
@@ -139,6 +166,21 @@ export default class BattleFactory {
 		else if(sign === LogSign.WARN) buf = styleText(['yellow', 'bold'], buf);
 		else buf = styleText(['red', 'bold'], buf);
 		console.log(buf);
+	}
+
+	/** Dump debugging data. */
+	dump(): string {
+		let buf = 'Battle Factory Dump\n';
+		buf += `state: ${this.#state}\n`;
+		buf += `queue: ${this.queue.join(', ')}\n`;
+		buf += `queueBan: ${this.queueBan.join(', ')}\n`;
+		buf += `challenges: ${Object.entries(this.challenges).map((x) => `${x[0]} to ${x[1]}`).join(', ')}\n`;
+		buf += `factorySets: ${this.factorySets ? 'loaded' : 'missing'}\n`;
+		buf += `factoryGenerator: ${this.factoryGenerator ? 'loaded' : 'missing'}\n`;
+		buf += `factoryValidator: ${this.factoryValidator ? 'loaded' : 'missing'}\n`;
+		buf += `bot1 listeners: ${this.bot1?.ls.map((x) => x.description).join(', ')}\n`;
+		buf += `bot2 listeners: ${this.bot2?.ls.map((x) => x.description).join(', ')}`;
+		return buf;
 	}
 
 	prepBattle(user1: string, user2: string, format?: string): Promise<Battle> {
@@ -160,14 +202,6 @@ export default class BattleFactory {
 			this.bot1!.await(`userdetails ${user1}`, 30, this.#BATTLE_1(user1)),
 			this.bot2!.await(`userdetails ${user2}`, 30, this.#BATTLE_1(user2)),
 		])
-		.catch((err) => {
-			if(typeof err !== 'string' || Object.values(RejectReason).includes(err as RejectReason)) throw err;
-			// Offline user, remove them from queue.
-			const id = /"userid":"(.+?)"/.exec(err)![1];
-			const i = this.queue.indexOf(id);
-			if(i !== -1) this.queue.splice(i, 1);
-			throw err;
-		})
 		.then(() => {
 			if(!battle.format) {
 				const formats = Object.keys(this.factorySets);
@@ -278,7 +312,7 @@ export default class BattleFactory {
 				if(this.queue.includes(user)) return 'You are already in the matchmaking queue.';
 				if(this.queueBan.includes(user)) return 'You can not enter the matchmaking queue at the moment.'
 				this.queue.push(user);
-				return 'You have entered the matchmaking queue.';
+				return `You have entered the matchmaking queue. There are ${this.queue.length - 1} other players in queue.`;
 			}
 			case 'out':
 			case 'leave':
@@ -325,12 +359,16 @@ export default class BattleFactory {
 				}
 				return buf;
 			}
+			case 'formats': {
+				return Object.keys(this.factorySets).map((x) => x.slice(0, -4)).join(', ');
+			}
 			default: return '35 Factory Commands (prefix ; in battle rooms):\n\n' +
 			'in: Enter the matchmaking queue. Alias: can\n\n' +
 			'out: Exit the matchmaking queue. Alias: leave, exit\n\n' +
 			'chal user format?: Challenge user to format (user must challenge back to accept) (user is not notified). Alias: challenge\n\n' +
 			'unchal: Withdraw your active challenge. Alias: unchallenge\n\n' +
-			'bf species format: Query sets in format. Alias: set, sets';
+			'bf species format: Query sets in format. Alias: set, sets\n\n' +
+			'formats: Get the list of rollable formats.';
 		}
 	}
 
@@ -364,7 +402,8 @@ export default class BattleFactory {
 	readonly #BATTLE_4: PredicateVar = (val) => (msg) => {
 		const data = msg.split('\n').map((x) => x.split('|', 2));
 		return data[0][0].slice(1) === val &&
-		data.pop()?.[1] === 'win' ||
+		// @ts-expect-error Please shut up
+		['win', 'tie'].includes(data.pop()?.[1]) ||
 		null;
 	}
 
@@ -377,12 +416,14 @@ export default class BattleFactory {
 
 	// pm
 	readonly #BOTCMD_1: Predicate = (msg) => {
-		const data = msg.split('|', 4);
+		const data = msg.split('|', 5);
 		return data[0] === '' &&
 		data[1] === 'pm' &&
 		// The sender must be anyone except our bots; the recipient must be our main bot.
 		![this.bot1!.username, this.bot2!.username].includes(data[2]?.slice(1)) &&
-		data[3]?.slice(1) === this.bot1!.username ||
+		data[3]?.slice(1) === this.bot1!.username &&
+		// Ignore '/challenge' and other commands.
+		data[4]?.[0] !== '/' ||
 		null;
 	}
 

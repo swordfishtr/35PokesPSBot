@@ -26,6 +26,14 @@ rl.on('line', (input) => {
 			log('To be implemented.');
 			return;
 		}
+		case 'dump': {
+			log('DUMP');
+			for(const x in services) {
+				console.log(services[x as keyof Services]?.dump() ?? `Could not dump ${x}`);
+			}
+			log('===');
+			return;
+		}
 		default: {
 			log('Controller Commands (type and enter):');
 			log('exit: Shutdown everything and exit. Alias: quit, bye, q');
