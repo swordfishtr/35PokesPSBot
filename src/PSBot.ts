@@ -86,7 +86,7 @@ export default class PSBot {
 			this.log(msg, LogSign.IN);
 			for(let i = 0; i < this.ls.length; i++) {
 				const test = this.ls[i].predicate(msg);
-				if(test === null) return;
+				if(test === null) continue;
 				else {
 					clearTimeout(this.ls[i].timeoutID);
 					if(test) this.ls[i].resolve(msg);

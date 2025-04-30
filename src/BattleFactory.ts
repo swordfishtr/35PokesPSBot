@@ -72,9 +72,8 @@ export default class BattleFactory {
 	async init() {
 		if(this.#state !== State.NEW) throw new Error();
 		this.factorySets = (await import('../../35PokesIndex/factory-sets.json', { with: { type: "json" } })).default;
-		const { debug, interval } = (await import('../config.json', { with: { type: "json" } })).default.battleFactory;
+		const { debug } = (await import('../config.json', { with: { type: "json" } })).default.battleFactory;
 		this.debug = !!debug;
-		this.#queueInterval = setInterval(this.tryMatchmaking, (interval || 5) * 1000);
 		this.#state = State.INIT;
 	}
 
@@ -87,16 +86,16 @@ export default class BattleFactory {
 		this.bot1.onDisconnect = this.shutdown;
 		this.bot2.onDisconnect = this.shutdown;
 
-		this.bot1.onMessage = this.receive;
-
-		const { botAuth1, botAuth2 } = (await import('../config.json', { with: { type: "json" } })).default.battleFactory;
+		const { botAuth1, botAuth2, interval } = (await import('../config.json', { with: { type: "json" } })).default.battleFactory;
 
 		try {
 			await this.bot1.connect();
-			await this.bot1.login(botAuth1);
+			await this.bot1.login(botAuth1 as Auth);
 			await this.bot2.connect();
-			await this.bot2.login(botAuth2);
+			await this.bot2.login(botAuth2 as Auth);
 			this.#state = State.ON;
+			this.#queueInterval = setInterval(this.tryMatchmaking, (interval || 5) * 1000);
+			this.bot1.onMessage = this.receive;
 		}
 		catch(err) {
 			this.#state = State.OFF;
@@ -120,10 +119,11 @@ export default class BattleFactory {
 	}
 
 	tryMatchmaking() {
-		if(this.#state !== State.ON || this.queue.length < 2) throw new Error();
+		if(this.#state !== State.ON) throw new Error();
+		if(this.queue.length < 2) return;
 
 		const players = this.queue.splice(0, 2);
-		this.prepBattle(players[0], players[1]).then(this.genBattle).finally(() => {
+		return this.prepBattle(players[0], players[1]).then(this.genBattle).finally(() => {
 			for(const player of players) {
 				const i = this.queueBan.indexOf(player);
 				if(i !== -1) this.queueBan.splice(i, 1);
@@ -272,7 +272,7 @@ export default class BattleFactory {
 
 	// Refer to default for expected fields
 	runCommand(user: string, ...fields: string[]): string {
-		switch(toID(fields[0])) {
+		switch(fields[0].toLowerCase()) {
 			case 'in':
 			case 'can': {
 				if(this.queue.includes(user)) return 'You are already in the matchmaking queue.';
