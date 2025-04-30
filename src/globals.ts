@@ -30,6 +30,13 @@ export enum LogSign {
 	ERR = 'XX'
 }
 
+export enum State {
+	NEW = 0,
+	INIT = 1,
+	ON = 2,
+	OFF = 3
+}
+
 export enum RejectReason {
 	TIMEOUT = 'Timed out.',
 	DISCONNECT = 'Disconnected.'

@@ -42,14 +42,16 @@ export default class PSBot {
 
 	// #region Internal use
 
-	#closing: () => void;
-	#_closing() {
+	#closing: (err: CloseEvent) => void;
+	#_closing(err: CloseEvent) {
 		this.#ws!.removeEventListener('message', this.receiveNoError);
+		this.#ws!.removeEventListener('error', this.#logError);
 		while(this.ls.length) {
 			const x = this.ls.pop()!;
 			clearTimeout(x.timeoutID);
 			x.reject(RejectReason.DISCONNECT);
 		}
+		this.log(err.reason, LogSign.ERR);
 		this.log('Connection closed.');
 		if(this.onDisconnect) this.onDisconnect();
 	}
@@ -69,6 +71,10 @@ export default class PSBot {
 		else if(sign === LogSign.WARN) buf = styleText('yellow', buf);
 		else if(sign === LogSign.ERR) buf = styleText('red', buf);
 		console.log(buf);
+	}
+
+	#logError() {
+		this.log('An error occurred in the websocket.', LogSign.ERR);
 	}
 
 	receive(event: MessageEvent) {
@@ -132,7 +138,7 @@ export default class PSBot {
 		// @ts-expect-error Readonly-ish
 		this.#ws = new WebSocket(PSBot.getURL());
 		this.#ws.addEventListener('message', this.receiveNoError);
-		this.#ws.addEventListener('error', this.#closing, { once: true });
+		this.#ws.addEventListener('error', this.#logError);
 		this.#ws.addEventListener('close', this.#closing, { once: true });
 
 		return new Promise((resolve, reject) => {

@@ -1,16 +1,24 @@
 {
-	"features": {
+	"battleFactory": {
+		"enable": false,
 		"debug": true,
-		"battlefactory": true
-	},
-	"logins": [
-		{
+		"interval": 0,
+		"botAuth1": {
 			"name": "",
 			"pass": ""
 		},
-		{
+		"botAuth2": {
 			"name": "",
 			"pass": ""
 		}
-	]
+	},
+	"liveUsageStats": {
+		"enable": false,
+		"debug": true,
+		"interval": 0,
+		"serveData": false,
+		"port": 0,
+		"portEnv": "",
+		"password": ""
+	}
 }
