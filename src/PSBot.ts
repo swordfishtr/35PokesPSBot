@@ -60,13 +60,13 @@ export default class PSBot {
 		if(!this.#ws || this.#ws.readyState !== WebSocket.OPEN) throw new Error('Not connected.');
 	}
 
-	log(msg: string, sign?: LogSign) {
+	log(msg: string, sign: LogSign = LogSign.INFO) {
 		if(!this.debug) return;
 		const time = Temporal.Now.zonedDateTimeISO().toLocaleString();
 		let buf = `${time} :: ${this.botname} `;
 		if(this.username) buf += `as ${this.username} `;
-		buf += `${sign ?? LogSign.INFO}\n${msg}\n`;
-		if(!sign || sign === LogSign.INFO) buf = styleText('green', buf);
+		buf += `${sign}\n${msg}\n`;
+		if(sign === LogSign.INFO) buf = styleText('green', buf);
 		else if(sign === LogSign.OUT) buf = styleText('blue', buf);
 		else if(sign === LogSign.WARN) buf = styleText('yellow', buf);
 		else if(sign === LogSign.ERR) buf = styleText('red', buf);

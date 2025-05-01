@@ -1,9 +1,21 @@
+import fs from 'fs';
 import readline from 'readline';
-import { Services } from './globals';
+import { Temporal } from '@js-temporal/polyfill';
+import { PATH_CONFIG, PATH_CRASH, PATH_PS_FACTORYSETS, PATH_PS_INDEX, Services } from './globals';
+
+process.on('uncaughtExceptionMonitor', (err, origin) => {
+	const time = Temporal.Now.zonedDateTimeISO().toLocaleString();
+	const crashlog = `${time} ${origin}\n${err}\n\n`;
+	fs.appendFileSync(PATH_CRASH, crashlog);
+});
 
 process.chdir(import.meta.dirname);
 log('Welcome to 35Pokes Pokemon Showdown Bot Controller!');
 log(`Project path: ${import.meta.dirname}`);
+log(`Global PATH_CONFIG: ${PATH_CONFIG}`);
+log(`Global PATH_CRASH: ${PATH_CRASH}`);
+log(`Global PATH_PS_FACTORYSETS: ${PATH_PS_FACTORYSETS}`);
+log(`Global PATH_PS_INDEX: ${PATH_PS_INDEX}`);
 log('To exit gracefully, enter exit.');
 
 const services: Services = {};

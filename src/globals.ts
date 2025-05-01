@@ -57,6 +57,8 @@ export interface FactorySet {
 	weight: number
 }
 
+export const PATH_CRASH = path.join(import.meta.dirname, '..', 'crash.log');
+
 export const PATH_CONFIG = path.join(import.meta.dirname, '..', 'config.json');
 
 export const PATH_PS_INDEX = path.join(import.meta.dirname, '..', '..', 'pokemon-showdown', 'dist', 'sim', 'index.js');
