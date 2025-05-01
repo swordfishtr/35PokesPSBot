@@ -1,7 +1,7 @@
 import fs from 'fs';
 import readline from 'readline';
 import { Temporal } from '@js-temporal/polyfill';
-import { PATH_CONFIG, PATH_CRASH, PATH_PS_FACTORYSETS, PATH_PS_INDEX, Services } from './globals';
+import { PATH_CONFIG, PATH_CRASH, PATH_PS_FACTORYSETS, PATH_PS_INDEX, Services } from './globals.js';
 
 process.on('uncaughtExceptionMonitor', (err, origin) => {
 	const time = Temporal.Now.zonedDateTimeISO().toLocaleString();
