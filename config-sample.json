@@ -3,6 +3,7 @@
 		"enable": false,
 		"debug": true,
 		"interval": 0,
+		"sudoers": [],
 		"botAuth1": {
 			"name": "",
 			"pass": ""

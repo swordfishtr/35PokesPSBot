@@ -37,6 +37,7 @@ export default class BattleFactory {
 	get state() { return this.#state; }
 
 	debug: boolean = false;
+	readonly sudoers: string[] = [];
 
 	readonly queue: string[] = [];
 	readonly queueBan: string[] = [];
@@ -58,7 +59,7 @@ export default class BattleFactory {
 	readonly teamErrors: string[] = [];
 
 	readonly chalcode = 'gen9nationaldex35pokes@@@+allpokemon,+unobtainable,+past,+shedtail,+tangledfeet';
-	readonly chalcodeUbers = 'gen9nationaldex35pokes @@@ !Obtainable Formes, !Evasion Abilities Clause, !DryPass Clause, Baton Pass Clause, -All Pokemon, +Unobtainable, +Past, -ND Uber, -ND AG, -ND OU, -ND UUBL, -ND UU, -ND RUBL, -ND RU, -ND NFE, -ND LC, +Forretress, +Samurott-Hisui, +Kyurem-White, +Glalie-Base, +Cresselia, +Thundurus-Base, +Regidrago, +Banette-Mega, +Banettite, +Dialga-Origin, +Giratina-Origin, +Palkia-Base, +Arceus-Rock, +Lunala, +Machamp, +Manectric-Mega, +Manectite, +Naganadel, +Pincurchin, +Meloetta-Pirouette, +Blissey, +Alakazam-Mega, +Alakazite, +Aggron-Mega, +Aggronite, +Ogerpon-Hearthflame-Tera, +Hoopa-Unbound, +Dragapult, +Camerupt-Mega, +Cameruptite, +Tyranitar-Mega, +Tyranitarite, +Gothitelle, +Skarmory, +Deoxys-Speed, +Floette-Eternal, +Gastrodon, +Dhelmise, +Sceptile-Mega, +Sceptilite, +Iron Treads, +Victini, -Dark Void, -Grass Whistle, -Hypnosis, -Lovely Kiss, -Sing, -Sleep Powder, +Last Respects, +Moody, +Shadow Tag, +Battle Bond, +Power Construct, +Acupressure, +Baton Pass + Contrary, +Baton Pass + Rapid Spin,+shedtail,+tangledfeet';
+	readonly chalcodeUbers = 'gen9nationaldex35pokes@@@!obtainableformes,!evasionabilitiesclause,!drypassclause,batonpassclause,-allpokemon,+unobtainable,+past,-nduber,-ndag,-ndou,-nduubl,-nduu,-ndrubl,-ndru,-ndnfe,-ndlc,+forretress,+samurott-hisui,+kyurem-white,+glalie-base,+cresselia,+thundurus-base,+regidrago,+banette-mega,+banettite,+dialga-origin,+giratina-origin,+palkia-base,+arceus-rock,+lunala,+machamp,+manectric-mega,+manectite,+naganadel,+pincurchin,+meloetta-pirouette,+blissey,+alakazam-mega,+alakazite,+aggron-mega,+aggronite,+ogerpon-hearthflame-tera,+hoopa-unbound,+dragapult,+camerupt-mega,+cameruptite,+tyranitar-mega,+tyranitarite,+gothitelle,+skarmory,+deoxys-speed,+floette-eternal,+gastrodon,+dhelmise,+sceptile-mega,+sceptilite,+irontreads,+victini,-darkvoid,-grasswhistle,-hypnosis,-lovelykiss,-sing,-sleeppowder,+lastrespects,+moody,+shadowtag,+battlebond,+powerconstruct,+acupressure,+batonpass+contrary,+batonpass+rapidspin,+shedtail,+tangledfeet';
 
 	onShutdown?: () => void;
 
@@ -82,10 +83,16 @@ export default class BattleFactory {
 
 	async init() {
 		if(this.#state !== State.NEW) throw new Error();
-		this.factorySets = (await import('../../pokemon-showdown/dist/data/random-battles/gen9/factory-sets.json', { with: { type: "json" } })).default;
-		const { debug } = (await import('../config.json', { with: { type: "json" } })).default.battleFactory;
-		this.debug = !!debug;
+		await this.loadConfig();
 		this.#state = State.INIT;
+	}
+
+	async loadConfig() {
+		this.factorySets = (await import('../../pokemon-showdown/dist/data/random-battles/gen9/factory-sets.json', { with: { type: "json" } })).default;
+		const { debug, sudoers } = (await import('../config.json', { with: { type: "json" } })).default.battleFactory;
+		this.debug = !!debug;
+		this.sudoers.length = 0;
+		this.sudoers.push(...sudoers);
 	}
 
 	async connect() {
@@ -303,12 +310,12 @@ export default class BattleFactory {
 		if(this.#BOTCMD_2(msg)) return this.#respondBR(msg);
 	}
 
-	#respondPM(msg: string) {
+	async #respondPM(msg: string) {
 		const data = msg.split('|', 5);
 		const user = toID(data[2].slice(1));
 		const fields = data[4].split(' ');
 
-		const out = this.runCommand(user, ...fields);
+		const out = await this.runCommand(user, ...fields);
 		if(!out) return;
 
 		const outLines = out.split('\n');
@@ -321,13 +328,13 @@ export default class BattleFactory {
 		}
 	}
 
-	#respondBR(msg: string) {
+	async #respondBR(msg: string) {
 		const data = msg.split('|', 4);
 		const room = data[0].slice(1, -1);
 		const user = toID(data[2].slice(1));
 		const fields = data[3].slice(1).split(' ');
 
-		const out = this.runCommand(user, ...fields);
+		const out = await this.runCommand(user, ...fields);
 		if(!out) return;
 
 		if(out.includes('\n')) this.bot1!.send(`${room}|!code ${out}`);
@@ -335,7 +342,7 @@ export default class BattleFactory {
 	}
 
 	// Refer to default for expected fields
-	runCommand(user: string, ...fields: string[]): string {
+	async runCommand(user: string, ...fields: string[]): Promise<string> {
 		switch(fields[0].toLowerCase()) {
 			case 'in':
 			case 'can': {
@@ -391,6 +398,11 @@ export default class BattleFactory {
 			}
 			case 'formats': {
 				return Object.keys(this.factorySets).map((x) => x.endsWith('.txt') ? x.slice(0, -4) : x).join(', ');
+			}
+			case 'hotpatch': {
+				if(!this.sudoers.includes(user)) return 'Not allowed.';
+				await this.loadConfig();
+				return 'Done!';
 			}
 			default: return '35 Factory Commands (prefix ; in battle rooms):\n\n' +
 			'in: Enter the matchmaking queue. Alias: can\n\n' +
