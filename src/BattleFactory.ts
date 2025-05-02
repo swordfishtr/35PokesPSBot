@@ -10,7 +10,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import PSBot from './PSBot.js';
 import PokemonShowdown from '../../pokemon-showdown/dist/sim/index.js';
 const { Dex, Teams, TeamValidator, toID } = PokemonShowdown;
-import { Auth, FactorySet, LogSign, Predicate, PredicateVar, RejectReason, State } from './globals.js';
+import { Auth, FactorySet, importJSON, LogSign, PATH_CONFIG, PATH_PS_FACTORYSETS, Predicate, PredicateVar, RejectReason, State } from './globals.js';
 
 interface Battle {
 	format: string,
@@ -81,15 +81,15 @@ export default class BattleFactory {
 		this.genBattle = this.genBattle.bind(this);
 	}
 
-	async init() {
+	init() {
 		if(this.#state !== State.NEW) throw new Error();
-		await this.loadConfig();
+		this.loadConfig();
 		this.#state = State.INIT;
 	}
 
-	async loadConfig() {
-		this.factorySets = (await import('../../pokemon-showdown/dist/data/random-battles/gen9/factory-sets.json', { with: { type: "json" } })).default;
-		const { debug, sudoers } = (await import('../config.json', { with: { type: "json" } })).default.battleFactory;
+	loadConfig() {
+		this.factorySets = importJSON(PATH_PS_FACTORYSETS);
+		const { debug, sudoers } = importJSON(PATH_CONFIG).battleFactory;
 		this.debug = !!debug;
 		this.sudoers.length = 0;
 		this.sudoers.push(...sudoers);
@@ -104,7 +104,7 @@ export default class BattleFactory {
 		this.bot1.onDisconnect = this.shutdown;
 		this.bot2.onDisconnect = this.shutdown;
 
-		const { botAuth1, botAuth2, interval } = (await import('../config.json', { with: { type: "json" } })).default.battleFactory;
+		const { botAuth1, botAuth2, interval } = importJSON(PATH_CONFIG).battleFactory;
 
 		try {
 			await this.bot1.connect();
@@ -190,6 +190,7 @@ export default class BattleFactory {
 	dump(): string {
 		let buf = 'Battle Factory Dump\n';
 		buf += `state: ${this.#state}\n`;
+		buf += `sudoers: ${this.sudoers.join(', ')}\n`
 		buf += `queue: ${this.queue.join(', ')}\n`;
 		buf += `queueBan: ${this.queueBan.join(', ')}\n`;
 		buf += `challenges: ${Object.entries(this.challenges).map((x) => `${x[0]} to ${x[1]}`).join(', ')}\n`;
@@ -310,12 +311,12 @@ export default class BattleFactory {
 		if(this.#BOTCMD_2(msg)) return this.#respondBR(msg);
 	}
 
-	async #respondPM(msg: string) {
+	#respondPM(msg: string) {
 		const data = msg.split('|', 5);
 		const user = toID(data[2].slice(1));
 		const fields = data[4].split(' ');
 
-		const out = await this.runCommand(user, ...fields);
+		const out = this.runCommand(user, ...fields);
 		if(!out) return;
 
 		const outLines = out.split('\n');
@@ -328,13 +329,13 @@ export default class BattleFactory {
 		}
 	}
 
-	async #respondBR(msg: string) {
+	#respondBR(msg: string) {
 		const data = msg.split('|', 4);
 		const room = data[0].slice(1, -1);
 		const user = toID(data[2].slice(1));
 		const fields = data[3].slice(1).split(' ');
 
-		const out = await this.runCommand(user, ...fields);
+		const out = this.runCommand(user, ...fields);
 		if(!out) return;
 
 		if(out.includes('\n')) this.bot1!.send(`${room}|!code ${out}`);
@@ -342,7 +343,7 @@ export default class BattleFactory {
 	}
 
 	// Refer to default for expected fields
-	async runCommand(user: string, ...fields: string[]): Promise<string> {
+	runCommand(user: string, ...fields: string[]): string {
 		switch(fields[0].toLowerCase()) {
 			case 'in':
 			case 'can': {
@@ -401,7 +402,7 @@ export default class BattleFactory {
 			}
 			case 'hotpatch': {
 				if(!this.sudoers.includes(user)) return 'Not allowed.';
-				await this.loadConfig();
+				this.loadConfig();
 				return 'Done!';
 			}
 			default: return '35 Factory Commands (prefix ; in battle rooms):\n\n' +

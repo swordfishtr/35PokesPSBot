@@ -1,7 +1,7 @@
 import fs from 'fs';
 import readline from 'readline';
 import { Temporal } from '@js-temporal/polyfill';
-import { PATH_CONFIG, PATH_CRASH, PATH_PS_FACTORYSETS, PATH_PS_INDEX, Services } from './globals.js';
+import { importJSON, PATH_CONFIG, PATH_CRASH, PATH_PS_FACTORYSETS, PATH_PS_INDEX, Services } from './globals.js';
 
 process.on('uncaughtExceptionMonitor', (err, origin) => {
 	const time = Temporal.Now.zonedDateTimeISO().toLocaleString();
@@ -67,7 +67,7 @@ function loadAll() {
 }
 
 async function loadBattleFactory() {
-	const { enable } = (await import('../config.json', { with: { type: "json" } })).default.battleFactory;
+	const { enable } = importJSON(PATH_CONFIG).battleFactory;
 	if(!enable) {
 		log('Battle Factory is not enabled.');
 		return;
@@ -85,7 +85,7 @@ async function loadBattleFactory() {
 	services.BattleFactory.onShutdown = () => {
 		log('To restart Battle Factory, enter restart bf.');
 	};
-	await services.BattleFactory.init();
+	services.BattleFactory.init();
 	await services.BattleFactory.connect();
 
 	log('Battle Factory started.');

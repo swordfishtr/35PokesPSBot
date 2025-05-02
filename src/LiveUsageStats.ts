@@ -12,6 +12,7 @@
  */
 
 import PSBot from './PSBot.js';
+import { importJSON, PATH_CONFIG } from './globals.js';
 
 //import express from 'express';
 
@@ -29,7 +30,7 @@ export default class LiveUsageStats {
 		if(this.#init) return;
 		this.#init = true;
 
-		const { debug, interval, serveData } = (await import('../config.json', { with: { type: "json" } })).default.liveUsageStats;
+		const { debug, interval, serveData } = importJSON(PATH_CONFIG).liveUsageStats;
 		this.debug = !!debug;
 		if(interval) this.interval = Number(interval);
 		this.serve = !!serveData;

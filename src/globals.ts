@@ -1,4 +1,9 @@
+import fs from 'fs';
 import path from 'path';
+
+export function importJSON(m: string) {
+	return JSON.parse(fs.readFileSync(m, { encoding: 'utf-8' }));
+}
 
 export interface Auth {
 	name: string,
