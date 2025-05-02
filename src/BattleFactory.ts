@@ -14,6 +14,7 @@ import { Auth, FactorySet, LogSign, Predicate, PredicateVar, RejectReason, State
 
 interface Battle {
 	format: string,
+	chalcode: string,
 	isRandom: boolean,
 	side1: BattleSide,
 	side2: BattleSide
@@ -25,6 +26,10 @@ interface BattleSide {
 }
 
 // TODO: fill out empty errors.
+
+// Ubers support requires a patch to dist/data/random-battles/gen9/teams.js
+// - species: typeof species.battleOnly === "string" ? species.battleOnly : species.name,
+// + species: species.name,
 
 export default class BattleFactory {
 
@@ -48,10 +53,12 @@ export default class BattleFactory {
 	factoryGenerator: any;
 
 	factoryValidator: any;
+	factoryValidatorUbers: any;
 
 	readonly teamErrors: string[] = [];
 
 	readonly chalcode = 'gen9nationaldex35pokes@@@+allpokemon,+unobtainable,+past,+shedtail,+tangledfeet';
+	readonly chalcodeUbers = 'gen9nationaldex35pokes @@@ !Obtainable Formes, !Evasion Abilities Clause, !DryPass Clause, Baton Pass Clause, -All Pokemon, +Unobtainable, +Past, -ND Uber, -ND AG, -ND OU, -ND UUBL, -ND UU, -ND RUBL, -ND RU, -ND NFE, -ND LC, +Forretress, +Samurott-Hisui, +Kyurem-White, +Glalie-Base, +Cresselia, +Thundurus-Base, +Regidrago, +Banette-Mega, +Banettite, +Dialga-Origin, +Giratina-Origin, +Palkia-Base, +Arceus-Rock, +Lunala, +Machamp, +Manectric-Mega, +Manectite, +Naganadel, +Pincurchin, +Meloetta-Pirouette, +Blissey, +Alakazam-Mega, +Alakazite, +Aggron-Mega, +Aggronite, +Ogerpon-Hearthflame-Tera, +Hoopa-Unbound, +Dragapult, +Camerupt-Mega, +Cameruptite, +Tyranitar-Mega, +Tyranitarite, +Gothitelle, +Skarmory, +Deoxys-Speed, +Floette-Eternal, +Gastrodon, +Dhelmise, +Sceptile-Mega, +Sceptilite, +Iron Treads, +Victini, -Dark Void, -Grass Whistle, -Hypnosis, -Lovely Kiss, -Sing, -Sleep Powder, +Last Respects, +Moody, +Shadow Tag, +Battle Bond, +Power Construct, +Acupressure, +Baton Pass + Contrary, +Baton Pass + Rapid Spin,+shedtail,+tangledfeet';
 
 	onShutdown?: () => void;
 
@@ -60,7 +67,9 @@ export default class BattleFactory {
 		this.factoryGenerator = Teams.getGenerator(formatBattleFactory);
 
 		const format35Pokes = Dex.formats.get(this.chalcode);
+		const format35PokesUbers = Dex.formats.get(this.chalcodeUbers);
 		this.factoryValidator = new TeamValidator(format35Pokes);
+		this.factoryValidatorUbers = new TeamValidator(format35PokesUbers);
 
 		this.receive = this.receive.bind(this);
 		this.init = this.init.bind(this);
@@ -151,7 +160,7 @@ export default class BattleFactory {
 			if(i !== -1) this.queue.splice(i, 1);
 		}
 
-		// Goes on until the battle ends. If this throws, the bot should stop.
+		// Goes on until the battle ends. If this throws, the bot is to stop.
 		await this.genBattle(battle);
 
 		for(const player of players) {
@@ -212,14 +221,30 @@ export default class BattleFactory {
 			}
 			this.factoryGenerator.factoryTier = battle.format;
 			battle.isRandom = !format;
+			let validator: any;
+
+			if(battle.format === 'Uber' || battle.format.startsWith('Seniors/')) {
+				battle.chalcode = this.chalcodeUbers;
+				validator = this.factoryValidatorUbers;
+			}
+			//else if(battle.format.startsWith('Perfect/')) { if not A1 or A2 }
+			else {
+				battle.chalcode = this.chalcode;
+				validator = this.factoryValidator;
+			}
+
+			console.log(battle.chalcode);
 
 			const teams: any[] = [];
 			while(teams.length < 2) {
 				const team = this.factoryGenerator.getTeam();
-				const problems: string[] | null = this.factoryValidator.baseValidateTeam(team);
-				if(problems?.length) this.teamErrors.push(problems.join(', '));
-				// hardcode max 20 errors
-				if(this.teamErrors.length >= 20) throw new Error(`Too many validator errors:\n${this.teamErrors.join(';\n')}`);
+				const problems: string[] | null = validator.baseValidateTeam(team);
+				if(problems?.length) {
+					this.teamErrors.push(problems.join(', '));
+					// hardcode max 20 errors
+					if(this.teamErrors.length >= 20) throw new Error(`Too many validator errors:\n${this.teamErrors.join(';\n')}`);
+					continue;
+				}
 				teams.push(team);
 			}
 			battle.side1.team = Teams.pack(teams[0]);
@@ -236,8 +261,8 @@ export default class BattleFactory {
 		this.bot1!.send(`|/utm ${battle.side1.team}`);
 		this.bot2!.send(`|/utm ${battle.side2.team}`);
 
-		this.bot1!.send(`|/challenge ${this.bot2!.username}, ${this.chalcode}`);
-		return this.bot2!.await('challenge', 30, this.#BATTLE_2)
+		this.bot1!.send(`|/challenge ${this.bot2!.username}, ${battle.chalcode}`);
+		return this.bot2!.await('challenge', 30, this.#BATTLE_2(battle.chalcode))
 		.then(() => {
 			this.bot2!.send(`|/accept ${this.bot1!.username}`);
 			return this.bot1!.await('battle room', 30, this.#BATTLE_3);
@@ -385,12 +410,12 @@ export default class BattleFactory {
 		return !!details.rooms;
 	}
 
-	readonly #BATTLE_2: Predicate = (msg) => {
+	readonly #BATTLE_2: PredicateVar = (val) => (msg) => {
 		const data = msg.split('|', 5);
 		return data[1] === 'pm' &&
 		data[2]?.slice(1) === this.bot1!.username &&
 		data[3]?.slice(1) === this.bot2!.username &&
-		data[4]?.startsWith(`/challenge ${this.chalcode}`) ||
+		data[4]?.startsWith(`/challenge ${val}`) ||
 		null;
 	}
 
