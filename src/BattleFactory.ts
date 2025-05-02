@@ -390,7 +390,7 @@ export default class BattleFactory {
 				return buf;
 			}
 			case 'formats': {
-				return Object.keys(this.factorySets).map((x) => x.slice(0, -4)).join(', ');
+				return Object.keys(this.factorySets).map((x) => x.endsWith('.txt') ? x.slice(0, -4) : x).join(', ');
 			}
 			default: return '35 Factory Commands (prefix ; in battle rooms):\n\n' +
 			'in: Enter the matchmaking queue. Alias: can\n\n' +
