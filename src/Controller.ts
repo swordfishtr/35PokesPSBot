@@ -5,7 +5,7 @@ import { importJSON, PATH_CONFIG, PATH_CRASH, PATH_PS_FACTORYSETS, PATH_PS_INDEX
 
 process.on('uncaughtExceptionMonitor', (err, origin) => {
 	const time = Temporal.Now.zonedDateTimeISO().toLocaleString();
-	const crashlog = `${time} ${origin}\n${err}\n\n`;
+	const crashlog = `${time} ${origin}\n${err.stack}\n\n`;
 	fs.appendFileSync(PATH_CRASH, crashlog);
 });
 
