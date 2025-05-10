@@ -1,9 +1,17 @@
 {
+	"server": {
+		"enable": false,
+		"port": 0,
+		"portEnv": "",
+		"password": ""
+	},
 	"battleFactory": {
 		"enable": false,
 		"debug": true,
+		"serve": false,
 		"interval": 0,
 		"sudoers": [],
+		"banned": [],
 		"botAuth1": {
 			"name": "",
 			"pass": ""
@@ -16,10 +24,7 @@
 	"liveUsageStats": {
 		"enable": false,
 		"debug": true,
-		"interval": 0,
-		"serveData": false,
-		"port": 0,
-		"portEnv": "",
-		"password": ""
+		"serve": false,
+		"interval": 0
 	}
 }

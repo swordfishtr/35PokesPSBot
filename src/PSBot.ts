@@ -1,12 +1,14 @@
 import { styleText } from 'node:util';
 import { Temporal } from '@js-temporal/polyfill';
-import { Auth, LogSign, Predicate, PredicateVar, RejectReason } from './globals.js';
+import {
+	Auth, fsLog, LogSign, PATH_MISCLOG, Predicate, PredicateRejection, PredicateVar, ShutdownRejection, TimeoutRejection
+} from './globals.js';
 
 interface Listener {
 	predicate: Predicate,
 	timeoutID: NodeJS.Timeout,
 	resolve: (msg: string) => void,
-	reject: (msg: string) => void,
+	reject: (msg: Error) => void,
 	description: string
 }
 
@@ -49,7 +51,7 @@ export default class PSBot {
 		while(this.ls.length) {
 			const x = this.ls.pop()!;
 			clearTimeout(x.timeoutID);
-			x.reject(RejectReason.DISCONNECT);
+			x.reject(new ShutdownRejection());
 		}
 		this.log(err.reason, LogSign.ERR);
 		this.log('Connection closed.');
@@ -66,6 +68,7 @@ export default class PSBot {
 		let buf = `${time} :: ${this.botname} `;
 		if(this.username) buf += `as ${this.username} `;
 		buf += `${sign}\n${msg}\n`;
+		fsLog(PATH_MISCLOG, buf);
 		if(sign === LogSign.INFO) buf = styleText('green', buf);
 		else if(sign === LogSign.OUT) buf = styleText('blue', buf);
 		else if(sign === LogSign.WARN) buf = styleText('yellow', buf);
@@ -90,7 +93,7 @@ export default class PSBot {
 				else {
 					clearTimeout(this.ls[i].timeoutID);
 					if(test) this.ls[i].resolve(msg);
-					else this.ls[i].reject(msg);
+					else this.ls[i].reject(new PredicateRejection(msg, this.ls[i].description));
 					this.ls.splice(i, 1);
 					break;
 				}
@@ -99,11 +102,12 @@ export default class PSBot {
 		}
 	}
 
-	/** receive but prettier */
+	/** receive but relaxed */
 	receiveNoError(event: MessageEvent) {
 		try { this.receive(event); }
 		catch(err) {
-			if(err instanceof TypeError || err instanceof SyntaxError) this.log(`Ignoring a message invalid for reason: ${err.message}`, LogSign.ERR);
+			if(err instanceof TypeError || err instanceof SyntaxError)
+				this.log(`Ignoring a message invalid for reason: ${err.message}`, LogSign.ERR);
 			else throw err;
 		}
 	}
@@ -119,7 +123,7 @@ export default class PSBot {
 		description = `Awaiting ${description}.`;
 		return new Promise((resolve, reject) => {
 			const timeoutID = setTimeout(() => {
-				reject(`${RejectReason.TIMEOUT} ${description}`);
+				reject(new TimeoutRejection(description));
 				const i = this.ls.findIndex((x) => x.predicate === predicate);
 				// TODO: remove after confirming everything works
 				if(i === -1) {
@@ -142,7 +146,7 @@ export default class PSBot {
 		this.#ws.addEventListener('close', this.#closing, { once: true });
 
 		return new Promise((resolve, reject) => {
-			const timeoutID = setTimeout(() => reject('Failed to connect to websocket.'), 30 * 1000);
+			const timeoutID = setTimeout(() => reject(new TimeoutRejection('connection to websocket')), 30 * 1000);
 			this.#ws!.addEventListener('open', () => {
 				clearTimeout(timeoutID);
 				resolve(void 0);

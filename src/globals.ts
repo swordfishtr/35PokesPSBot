@@ -5,6 +5,10 @@ export function importJSON(m: string) {
 	return JSON.parse(fs.readFileSync(m, { encoding: 'utf-8' }));
 }
 
+export function fsLog(path: string, data: string) {
+	fs.appendFileSync(path, data);
+}
+
 export interface Auth {
 	name: string,
 	pass: string
@@ -16,14 +20,13 @@ export interface Services {
 
 /**
  * Resolved with the matching message.
- * Rejected with the matching message or RejectReason.
+ * Rejected with PredicateRejection with the matching message.
  * 
  * true:resolve, null:ignore, false:reject
  */
 export type Predicate = (msg: string) => boolean | null;
 
-/** Curried Predicate */
-export type PredicateVar = (val: string) => Predicate;
+export type PredicateVar = (...val: string[]) => Predicate;
 
 export type Problems = string[];
 
@@ -42,9 +45,42 @@ export enum State {
 	OFF = 3
 }
 
-export enum RejectReason {
+/* export enum RejectReason {
 	TIMEOUT = 'Timed out.',
 	DISCONNECT = 'Disconnected.'
+} */
+
+/** Thrown when a predicate returns false. */
+export class PredicateRejection extends Error {
+
+	readonly description?: string;
+
+	constructor(message: string, description?: string) {
+		super(message);
+		this.description = description;
+	}
+
+}
+
+/** Thrown when a predicate times out. */
+export class TimeoutRejection extends Error {
+
+	readonly description?: string;
+
+	constructor(description?: string) {
+		super();
+		this.description = description;
+	}
+
+}
+
+/** Thrown when shutdown before a predicate settles. */
+export class ShutdownRejection extends Error {
+
+	constructor() {
+		super();
+	}
+
 }
 
 export type PokemonStat = 'hp' | 'atk' | 'def' | 'spa' | 'spd' | 'spe';
@@ -62,7 +98,8 @@ export interface FactorySet {
 	weight: number
 }
 
-export const PATH_CRASH = path.join(import.meta.dirname, '..', 'crash.log');
+export const PATH_CRASHLOG = path.join(import.meta.dirname, '..', 'crash.log');
+export const PATH_MISCLOG = path.join(import.meta.dirname, '..', 'misc.log');
 
 export const PATH_CONFIG = path.join(import.meta.dirname, '..', 'config.json');
 

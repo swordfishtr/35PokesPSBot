@@ -6,11 +6,15 @@
  */
 
 import { styleText } from 'node:util';
+import express from 'express';
 import { Temporal } from '@js-temporal/polyfill';
 import PSBot from './PSBot.js';
 import PokemonShowdown from '../../pokemon-showdown/dist/sim/index.js';
 const { Dex, Teams, TeamValidator, toID } = PokemonShowdown;
-import { Auth, FactorySet, importJSON, LogSign, PATH_CONFIG, PATH_PS_FACTORYSETS, Predicate, PredicateVar, RejectReason, State } from './globals.js';
+import {
+	Auth, FactorySet, fsLog, importJSON, LogSign, PATH_CONFIG, PATH_MISCLOG, PATH_PS_FACTORYSETS, Predicate,
+	PredicateRejection, PredicateVar, Services, ShutdownRejection, State, TimeoutRejection
+} from './globals.js';
 
 interface Battle {
 	format: string,
@@ -51,10 +55,15 @@ export default class BattleFactory {
 	readonly sudoers: string[] = [];
 
 	readonly queue: string[] = [];
-	readonly queueBan: string[] = [];
 	#queueInterval?: NodeJS.Timeout;
 
+	readonly queueBan: string[] = [];
+	readonly fullBan: string[] = [];
+
 	readonly challenges: ChallengeTable = {};
+
+	/** Whether the bots are able to challenge. */
+	ready: boolean = true;
 
 	bot1?: PSBot;
 	bot2?: PSBot;
@@ -72,6 +81,10 @@ export default class BattleFactory {
 	readonly chalcode = 'gen9nationaldex35pokes@@@+allpokemon,+unobtainable,+past,+shedtail,+tangledfeet';
 	readonly chalcodeUbers = 'gen9nationaldex35pokes@@@!obtainableformes,!evasionabilitiesclause,!drypassclause,batonpassclause,-allpokemon,+unobtainable,+past,-nduber,-ndag,-ndou,-nduubl,-nduu,-ndrubl,-ndru,-ndnfe,-ndlc,+forretress,+samurott-hisui,+kyurem-white,+glalie-base,+cresselia,+thundurus-base,+regidrago,+banette-mega,+banettite,+dialga-origin,+giratina-origin,+palkia-base,+arceus-rock,+lunala,+machamp,+manectric-mega,+manectite,+naganadel,+pincurchin,+meloetta-pirouette,+blissey,+alakazam-mega,+alakazite,+aggron-mega,+aggronite,+ogerpon-hearthflame-tera,+hoopa-unbound,+dragapult,+camerupt-mega,+cameruptite,+tyranitar-mega,+tyranitarite,+gothitelle,+skarmory,+deoxys-speed,+floette-eternal,+gastrodon,+dhelmise,+sceptile-mega,+sceptilite,+irontreads,+victini,-darkvoid,-grasswhistle,-hypnosis,-lovelykiss,-sing,-sleeppowder,+lastrespects,+moody,+shadowtag,+battlebond,+powerconstruct,+acupressure,+batonpass+contrary,+batonpass+rapidspin,+shedtail,+tangledfeet';
 
+	readonly dqTimer = 5 * 60;
+	readonly maxBattleDuration = 6 * 60 * 60;
+	readonly lagGracePeriod = 30;
+
 	onShutdown?: () => void;
 
 	constructor() {
@@ -85,7 +98,7 @@ export default class BattleFactory {
 		this.ensurePlayersOnline = this.ensurePlayersOnline.bind(this);
 		this.genTeams = this.genTeams.bind(this);
 		this.prepBattle = this.prepBattle.bind(this);
-		this.genBattle = this.genBattle.bind(this);
+		this.startBattle = this.startBattle.bind(this);
 		this.receive = this.receive.bind(this);
 		this.respondPM = this.respondPM.bind(this)
 		this.respondBR = this.respondBR.bind(this);
@@ -115,8 +128,10 @@ export default class BattleFactory {
 		this.factoryValidator = new TeamValidator(format35Pokes);
 		this.factoryValidatorUbers = new TeamValidator(format35PokesUbers);
 
-		const { debug, sudoers } = importJSON(PATH_CONFIG).battleFactory;
+		const { banned, debug, sudoers } = importJSON(PATH_CONFIG).battleFactory;
 		this.debug = !!debug;
+		this.fullBan.length = 0;
+		this.fullBan.push(...banned);
 		this.sudoers.length = 0;
 		this.sudoers.push(...sudoers);
 	}
@@ -140,21 +155,22 @@ export default class BattleFactory {
 			this.#state = State.ON;
 			this.#queueInterval = setInterval(this.tryMatchmaking, (interval || 5) * 1000);
 			this.bot1.onMessage = this.receive;
+			this.bot2.onMessage = this.rejectChallenges(this.bot2);
 		}
 		catch(err) {
-			this.#state = State.OFF;
+			this.shutdown();
 			throw err;
 		}
 	}
 
 	shutdown() {
-		if(this.#state !== State.ON) throw new Error();
+		if(![State.INIT, State.ON].includes(this.#state)) throw new Error();
 
-		delete this.bot1!.onDisconnect;
-		delete this.bot2!.onDisconnect;
+		delete this.bot1?.onDisconnect;
+		delete this.bot2?.onDisconnect;
 
-		this.bot1!.disconnect();
-		this.bot2!.disconnect();
+		this.bot1?.disconnect();
+		this.bot2?.disconnect();
 
 		clearInterval(this.#queueInterval);
 		if(this.onShutdown) this.onShutdown();
@@ -166,6 +182,7 @@ export default class BattleFactory {
 		if(!this.debug) return;
 		const time = Temporal.Now.zonedDateTimeISO().toLocaleString();
 		let buf = `${time} :: ${msg}\n`;
+		fsLog(PATH_MISCLOG, buf);
 		if(sign === LogSign.INFO) buf = styleText(['green', 'bold'], buf);
 		else if(sign === LogSign.WARN) buf = styleText(['yellow', 'bold'], buf);
 		else buf = styleText(['red', 'bold'], buf);
@@ -179,13 +196,14 @@ export default class BattleFactory {
 		buf += `sudoers: ${this.sudoers.join(', ')}\n`
 		buf += `queue: ${this.queue.join(', ')}\n`;
 		buf += `queueBan: ${this.queueBan.join(', ')}\n`;
+		buf += `fullBan: ${this.fullBan.join(', ')}\n`;
 		buf += `challenges: ${Object.entries(this.challenges).map((x) => `${x[0]} for ${x[1].target} to ${x[1].format ?? 'random'}`).join(', ')}\n`;
 		buf += `factorySets: ${this.factorySets ? 'loaded' : 'missing'}\n`;
 		buf += `factoryGenerator: ${this.factoryGenerator ? 'loaded' : 'missing'}\n`;
 		buf += `factoryValidator: ${this.factoryValidator ? 'loaded' : 'missing'}\n`;
-		buf += `bot1 listeners: ${this.bot1?.ls.map((x) => x.description).join(', ')}\n`;
-		buf += `bot2 listeners: ${this.bot2?.ls.map((x) => x.description).join(', ')}\n`;
-		buf += `teamErrors: ${this.teamErrors.join(';\n')}`;
+		buf += `bot1 listeners:\n${this.bot1?.ls.map((x) => x.description).join(',\n')};\n`;
+		buf += `bot2 listeners:\n${this.bot2?.ls.map((x) => x.description).join(',\n')};\n`;
+		buf += `teamErrors:\n${this.teamErrors.join(',\n')};\n`;
 		return buf;
 	}
 
@@ -215,7 +233,7 @@ export default class BattleFactory {
 
 		const genTeams = this.genTeams(2);
 		const battle = this.prepBattle(user1, user2, genTeams);
-		await this.genBattle(battle);
+		await this.startBattle(battle);
 
 		for(const x of [user1, user2]) {
 			const i = this.queueBan.indexOf(x);
@@ -229,7 +247,7 @@ export default class BattleFactory {
 
 		const userids = usernames.map(toID);
 		for(const x of userids) { this.bot1!.send(`|/cmd userdetails ${x}`); }
-		const queries = userids.map((x) => this.bot1!.await(`userdetails ${x}`, 30, this.#BATTLE_1(x)));
+		const queries = userids.map((x) => this.bot1!.await(`userdetails ${x}`, this.lagGracePeriod, this.#BATTLE_1(x)));
 		const responses = await Promise.allSettled(queries);
 		return usernames.filter((x, i) => responses[i].status === 'rejected');
 	}
@@ -289,56 +307,161 @@ export default class BattleFactory {
 	}
 
 	/** Creates a battle and hands out invites. Returns winner or null if tie. */
-	genBattle(battle: Battle): Promise<string | null> {
+	async startBattle(battle: Battle): Promise<string | null> {
 		if(this.#state !== State.ON) throw new Error();
+
+		if(!this.ready) throw new Error('NOT READY!!!');
+		this.ready = false;
 
 		// No response for these.
 		this.bot1!.send(`|/utm ${battle.side1.team}`);
 		this.bot2!.send(`|/utm ${battle.side2.team}`);
 
 		this.bot1!.send(`|/challenge ${this.bot2!.username}, ${battle.chalcode}`);
-		return this.bot2!.await('challenge', 30, this.#BATTLE_2(battle.chalcode))
-		.then(() => {
-			this.bot2!.send(`|/accept ${this.bot1!.username}`);
-			return this.bot1!.await('battle room', 30, this.#BATTLE_3);
-		})
-		.then((msg) => {
-			const room = msg.slice(1, msg.indexOf('\n'));
+		await this.bot2!.await('challenge', this.lagGracePeriod, this.#BATTLE_2(battle.chalcode));
 
-			// Could process further.
-			if(battle.format.endsWith('.txt')) battle.format = battle.format.slice(0, -4);
-			if(!battle.isRandom) battle.format += ' (user-selected)';
+		this.bot2!.send(`|/accept ${this.bot1!.username}`);
+		const msg_room = await this.bot1!.await('battle room', this.lagGracePeriod, this.#BATTLE_3);
+		const room = msg_room.slice(1, msg_room.indexOf('\n'));
 
-			this.bot1!.send(`${room}|35 Factory Format: ${battle.format}`);
-			this.bot1!.send(`${room}|/timer on`);
-			this.bot2!.send(`${room}|/timer on`);
-			this.bot1!.send(`${room}|/leavebattle`);
-			this.bot2!.send(`${room}|/leavebattle`);
-			this.bot1!.send(`${room}|/addplayer ${battle.side1.username}, p1`);
-			this.bot2!.send(`${room}|/addplayer ${battle.side2.username}, p2`);
-			this.bot2!.send(`|/noreply /leave ${room}`);
+		this.log(`Started a ${battle.format} battle for ${battle.side1.username} and ${battle.side2.username} at ${room}`, LogSign.INFO);
 
-			this.log(`Started a ${battle.format} battle for ${battle.side1.username} and ${battle.side2.username} at ${room}`, LogSign.INFO);
+		let intro = battle.format;
+		if(intro.endsWith('.txt')) intro = intro.slice(0, -4);
+		if(!battle.isRandom) intro += ' (user-selected)';
 
-			return this.bot1!.await('battle end', 60 * 60, this.#BATTLE_4(room));
-		})
-		.then((msg) => {
-			const data = msg.split('\n');
-			const room = data.shift()!.slice(1);
-			this.bot1!.send(`|/noreply /leave ${room}`);
-			const [result, user] = data.pop()!.split('|', 3).slice(1);
+		this.bot1!.send(`${room}|35 Factory Format: ${intro}`);
+		this.bot1!.send(`${room}|/timer on`);
+		this.bot2!.send(`${room}|/timer on`);
+		this.bot1!.send(`${room}|/leavebattle`);
+		this.bot2!.send(`${room}|/leavebattle`);
 
-			this.log(`Battle ${result === 'win' ? `won by ${user}` : 'ended in tie'} at ${room}`, LogSign.INFO);
+		// Showdown's battle invite functionality is janky, so we have to go out of our way to determine when
+		// a battle starts and ends and when another can be started; otherwise, we would risk undefined
+		// behavior and crashes. Here are our intentions currently:
+		//
+		// - If both sides accept:
+		// -- Ready for another battle immediately.
+		// -- Await battle end for result.
+		// - If either side is unresponsive until battle end:
+		// -- Send cancelchal for all unresponsive sides.
+		// -- Ready for another battle.
+		// -- Await battle end for result (possibly a tie).
+		// - If one side rejects invite:
+		// -- If the other side hasn't accepted invite, send cancelchal.
+		// -- Ready for another battle.
+		// -- The result is the other side wins immediately.
+		//
+		// To passively indicate that everything is in order, bot2 should leave upon battle ready, and bot1
+		// should stay until the battle result is determined.
 
-			//return this.bot1!.await('battle exit', 30, this.#BATTLE_5(room));
-			return result === 'win' ? user : null;
+		this.bot1!.send(`${room}|/addplayer ${battle.side1.username}, p1`);
+		this.bot2!.send(`${room}|/addplayer ${battle.side2.username}, p2`);
+
+		const promise_battleend = this.bot1!.await(`${room} end`, this.maxBattleDuration, this.#BATTLE_4(room));
+
+		// Accepted or rejected.
+		let p1responded = false;
+		let p2responded = false;
+
+		let rejectionWin = '';
+
+		await Promise.all([
+			Promise.race([
+				this.bot1!.await(`${room} invite p1`, this.dqTimer + this.lagGracePeriod, this.#BATTLE_6(battle.side1.username, this.bot1!.username!))
+				.finally(() => {
+					p1responded = true;
+				}),
+				promise_battleend
+			])
+			.then((x) => {
+				if(x.startsWith('>') && !rejectionWin) {
+					this.bot1!.send(`|/cancelchallenge ${battle.side1.username}`);
+				}
+			}),
+			Promise.race([
+				this.bot2!.await(`${room} invite p2`, this.dqTimer + this.lagGracePeriod, this.#BATTLE_6(battle.side2.username, this.bot2!.username!))
+				.finally(() => {
+					p2responded = true;
+				}),
+				promise_battleend
+			])
+			.then((x) => {
+				if(x.startsWith('>') && !rejectionWin) {
+					this.bot2!.send(`|/cancelchallenge ${battle.side2.username}`);
+				}
+			})
+		])
+		.catch((err) => {
+			if(!(err instanceof PredicateRejection)) throw err;
+			const forfeit = toID(err.message.split('|').pop()!.slice(10, -24));
+			if(forfeit === battle.side1.username) {
+				rejectionWin = battle.side2.username;
+				if(!p2responded) this.bot2!.send(`|/cancelchallenge ${battle.side2.username}`);
+			}
+			else if(forfeit === battle.side2.username) {
+				rejectionWin = battle.side1.username;
+				if(!p1responded) this.bot1!.send(`|/cancelchallenge ${battle.side1.username}`);
+			}
+			else throw new Error();
 		});
+
+		this.ready = true;
+		this.bot2!.send(`|/noreply /leave ${room}`);
+
+		if(rejectionWin) {
+			this.bot1!.send(`${room}|Win given to ${rejectionWin} by their opponent. (if this was a ladder match, you are free to join the queue again)`);
+			this.bot1!.send(`|/noreply /leave ${room}`);
+			this.log(`Battle ended in forfeit win given to ${rejectionWin} at ${room}`, LogSign.INFO);
+			return rejectionWin;
+		}
+
+		const msg_end = await promise_battleend;
+		const [end, winner] = msg_end.split('|').slice(-2); // TODO: does this actually detect tie?
+
+		this.bot1!.send(`|/noreply /leave ${room}`);
+
+		this.log(`Battle ${end === 'win' ? `won by ${winner}` : 'ended in tie'} at ${room}`, LogSign.INFO);
+
+		//await this.bot1!.await('battle exit', 30, this.#BATTLE_5(room));
+
+		return end === 'win' ? winner : null;
+	}
+
+	factoryToPaste(species: string, data: any): string {
+		let buf = `${species} weight ${data[species].weight}`;
+		for(const x of data[species].sets as FactorySet[]) {
+			const evs = Object.entries(x.evs).filter((y) => y[1] > 0).map((y) => `${y[1]} ${y[0]}`).join(' / ');
+			const ivs = Object.entries(x.ivs).filter((y) => y[1] < 31).map((y) => `${y[1]} ${y[0]}`).join(' / ');
+			buf += '\n\n';
+			buf += `${x.weight}% @ ${x.item.join(' / ')}\n`;
+			buf += `Ability: ${x.ability.join(' / ')}\n`;
+			if(evs) buf += `EVs: ${evs}\n`;
+			buf += `${x.nature.join(' / ')} Nature\n`;
+			if(ivs) buf += `IVs: ${ivs}\n`;
+			for(const y of x.moves) {
+				buf += `- ${y.join(' / ')}\n`;
+			}
+			buf = buf.slice(0, -1);
+		}
+		return buf;
 	}
 
 	receive(msg: string) {
 		if(this.#state !== State.ON) throw new Error();
+		this.rejectChallenges(this.bot1!)(msg);
 		if(this.#BOTCMD_1(msg)) return this.respondPM(msg);
 		if(this.#BOTCMD_2(msg)) return this.respondBR(msg);
+	}
+
+	// Getting too fancy here ...
+	readonly rejectChallenges = (bot: PSBot) => (msg: string) => {
+		if(this.#state !== State.ON) throw new Error();
+		if(this.#BOTCMD_3(bot.username!)(msg)) {
+			const data = msg.split('|', 5);
+			const user = data[2].slice(1);
+			bot.send(`|/reject ${user}`);
+		}
 	}
 
 	async respondPM(msg: string) {
@@ -429,7 +552,7 @@ export default class BattleFactory {
 						}
 						const genTeams = this.genTeams(2, format);
 						const battle = this.prepBattle(target, user, genTeams);
-						this.genBattle(battle);
+						this.startBattle(battle);
 						buf += 'Your battle is coming up.'
 						return buf;
 					}
@@ -463,23 +586,8 @@ export default class BattleFactory {
 				if(!(fields[2] in this.factorySets)) return 'Format not found. Check your syntax, it should be like ```2025/2025_04```';
 				fields[1] = toID(fields[1]);
 				if(!(fields[1] in this.factorySets[fields[2]])) return 'Species not found in format. Try including or excluding forme suffix.';
-				const data = this.factorySets[fields[2]][fields[1]];
-				let buf = `${fields[1]} weight ${data.weight}`;
-				for(const x of data.sets as FactorySet[]) {
-					const evs = Object.entries(x.evs).filter((y) => y[1] > 0).map((y) => `${y[1]} ${y[0]}`).join(' / ');
-					const ivs = Object.entries(x.ivs).filter((y) => y[1] < 31).map((y) => `${y[1]} ${y[0]}`).join(' / ');
-					buf += '\n\n';
-					buf += `${x.weight}% @ ${x.item.join(' / ')}\n`;
-					buf += `Ability: ${x.ability.join(' / ')}\n`;
-					if(evs) buf += `EVs: ${evs}\n`;
-					buf += `${x.nature.join(' / ')} Nature\n`;
-					if(ivs) buf += `IVs: ${ivs}\n`;
-					for(const y of x.moves) {
-						buf += `- ${y.join(' / ')}\n`;
-					}
-					buf = buf.slice(0, -1);
-				}
-				return buf;
+				const data = this.factorySets[fields[2]];
+				return this.factoryToPaste(fields[1], data);
 			}
 			case 'formats': {
 				return Object.keys(this.factorySets).map((x) => x.endsWith('.txt') ? x.slice(0, -4) : x).join(', ');
@@ -504,7 +612,7 @@ export default class BattleFactory {
 		if(data[1] !== 'queryresponse' || data[2] !== 'userdetails') return null;
 		const details = JSON.parse(data[3]);
 		if(details.userid !== val) return null;
-		return !!details.rooms;
+		return !!details.rooms && !!details.autoconfirmed;
 	}
 
 	readonly #BATTLE_2: PredicateVar = (val) => (msg) => {
@@ -529,8 +637,7 @@ export default class BattleFactory {
 	readonly #BATTLE_4: PredicateVar = (val) => (msg) => {
 		const data = msg.split('\n').map((x) => x.split('|', 2));
 		return data[0][0].slice(1) === val &&
-		// @ts-expect-error Please shut up
-		['win', 'tie'].includes(data.pop()?.[1]) ||
+		(['win', 'tie'] as any[]).includes(data.pop()?.[1]) ||
 		null;
 	}
 
@@ -541,13 +648,25 @@ export default class BattleFactory {
 		null;
 	} */
 
+	readonly #BATTLE_6: PredicateVar = (user, bot) => (msg) => {
+		const data = msg.split('|', 5);
+		const prelim = data[0] === '' &&
+		data[1] === 'pm' &&
+		toID(data[2]?.slice(1)) === user &&
+		data[3]?.slice(1) === bot;
+		if(!prelim) return null;
+		if(data[4] === '/text You accepted the battle invite') return true;
+		if(data[4] === `/nonotify ${user} rejected the challenge.`) return false;
+		return null;
+	}
+
 	// pm
 	readonly #BOTCMD_1: Predicate = (msg) => {
 		const data = msg.split('|', 5);
 		return data[0] === '' &&
 		data[1] === 'pm' &&
 		// The sender must be anyone except our bots; the recipient must be our main bot.
-		![this.bot1!.username, this.bot2!.username].includes(data[2]?.slice(1)) &&
+		![this.bot1?.username ?? null, this.bot2?.username ?? null].includes(data[2]?.slice(1)) &&
 		data[3]?.slice(1) === this.bot1!.username &&
 		// Ignore '/challenge' and other commands.
 		data[4]?.[0] !== '/' ||
@@ -562,6 +681,56 @@ export default class BattleFactory {
 		// Bot command prefix in battle rooms
 		data[1]?.[3]?.[0] === ';' ||
 		null;
+	}
+
+	// challenges and invites
+	readonly #BOTCMD_3: PredicateVar = (val) => (msg) => {
+		const data = msg.split('|', 5);
+		return data[0] === '' &&
+		data[1] === 'pm' &&
+		![this.bot1?.username ?? null, this.bot2?.username ?? null].includes(data[2]?.slice(1)) &&
+		data[3]?.slice(1) === val &&
+		// Note the trailing space - that implies a format follows, which means this was a voluntary action.
+		// Ws clients receive '/challenge' whenever accepting or rejecting occurs; that is noise.
+		data[4]?.startsWith('/challenge ') ||
+		null;
+	}
+
+	static serve(services: Services): Express.Application {
+		const app = express();
+		app.get('/', (req, res) => {
+			if(!services.BattleFactory) {
+				res.status(503).json({ error: 'Battle Factory is disabled.' });
+				return;
+			}
+			let buf = '';
+			for(const meta in services.BattleFactory.factorySets) {
+				buf += `<a href="/bf/${meta}">${meta}</a><br />`;
+			}
+			res.send(buf);
+		});
+		app.get('/:group/:meta', (req, res) => {
+			// 401 if password wrong
+			if(!services.BattleFactory) {
+				res.status(503).json({ error: 'Battle Factory is disabled.' });
+				return;
+			}
+			let meta = `${req.params.group}/${req.params.meta}`;
+			if(!meta.endsWith('.txt')) meta += '.txt';
+			if(!(meta in services.BattleFactory.factorySets)) {
+				res.status(404).json({ error: 'Format not supported.' });
+				return;
+			}
+			let buf = `<h1>${meta}</h1>`;
+			for(const species in services.BattleFactory.factorySets[meta]) {
+				buf += '===== ';
+				buf += services.BattleFactory.factoryToPaste(species, services.BattleFactory.factorySets[meta]);
+				buf += '\n\n';
+			}
+			buf = buf.replaceAll('\n', '<br />')
+			res.send(buf);
+		});
+		return app;
 	}
 
 }
