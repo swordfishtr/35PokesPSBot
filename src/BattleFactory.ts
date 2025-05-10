@@ -210,7 +210,7 @@ export default class BattleFactory {
 	/** Try to generate a random format battle for users in queue. */
 	async tryMatchmaking() {
 		if(this.#state !== State.ON) throw new Error();
-		if(this.queue.length < 2) return;
+		if(!this.ready || this.queue.length < 2) return;
 
 		const [user1, user2] = this.queue.slice(0, 2);
 
@@ -537,6 +537,11 @@ export default class BattleFactory {
 				const format = fields[2] ? ( fields[2].endsWith('.txt') || fields[2] === 'Uber' ) ? fields[2] : `${fields[2]}.txt` : null;
 				if(format && !(format in this.factorySets)) {
 					buf += `Format ${fields[2]} is not supported.`;
+					return buf;
+				}
+
+				if(!this.ready) {
+					buf += 'Can not start a battle right now, try again in a few minutes.';
 					return buf;
 				}
 
