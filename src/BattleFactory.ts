@@ -100,6 +100,7 @@ export default class BattleFactory {
 		this.prepBattle = this.prepBattle.bind(this);
 		this.startBattle = this.startBattle.bind(this);
 		this.receive = this.receive.bind(this);
+		this.rejectChallenges = this.rejectChallenges.bind(this);
 		this.respondPM = this.respondPM.bind(this)
 		this.respondBR = this.respondBR.bind(this);
 		this.runCommand = this.runCommand.bind(this);
@@ -107,8 +108,10 @@ export default class BattleFactory {
 		this.#BATTLE_2 = this.#BATTLE_2.bind(this);
 		this.#BATTLE_3 = this.#BATTLE_3.bind(this);
 		this.#BATTLE_4 = this.#BATTLE_4.bind(this);
+		this.#BATTLE_6 = this.#BATTLE_6.bind(this);
 		this.#BOTCMD_1 = this.#BOTCMD_1.bind(this);
 		this.#BOTCMD_2 = this.#BOTCMD_2.bind(this);
+		this.#BOTCMD_3 = this.#BOTCMD_3.bind(this);
 	}
 
 	init() {
@@ -417,7 +420,7 @@ export default class BattleFactory {
 		}
 
 		const msg_end = await promise_battleend;
-		const [end, winner] = msg_end.split('|').slice(-2); // TODO: does this actually detect tie?
+		const [end, winner] = msg_end.split('|').slice(-2);
 
 		this.bot1!.send(`|/noreply /leave ${room}`);
 
@@ -426,25 +429,6 @@ export default class BattleFactory {
 		//await this.bot1!.await('battle exit', 30, this.#BATTLE_5(room));
 
 		return end === 'win' ? winner : null;
-	}
-
-	factoryToPaste(species: string, data: any): string {
-		let buf = `${species} weight ${data[species].weight}`;
-		for(const x of data[species].sets as FactorySet[]) {
-			const evs = Object.entries(x.evs).filter((y) => y[1] > 0).map((y) => `${y[1]} ${y[0]}`).join(' / ');
-			const ivs = Object.entries(x.ivs).filter((y) => y[1] < 31).map((y) => `${y[1]} ${y[0]}`).join(' / ');
-			buf += '\n\n';
-			buf += `${x.weight}% @ ${x.item.join(' / ')}\n`;
-			buf += `Ability: ${x.ability.join(' / ')}\n`;
-			if(evs) buf += `EVs: ${evs}\n`;
-			buf += `${x.nature.join(' / ')} Nature\n`;
-			if(ivs) buf += `IVs: ${ivs}\n`;
-			for(const y of x.moves) {
-				buf += `- ${y.join(' / ')}\n`;
-			}
-			buf = buf.slice(0, -1);
-		}
-		return buf;
 	}
 
 	receive(msg: string) {
@@ -592,7 +576,7 @@ export default class BattleFactory {
 				fields[1] = toID(fields[1]);
 				if(!(fields[1] in this.factorySets[fields[2]])) return 'Species not found in format. Try including or excluding forme suffix.';
 				const data = this.factorySets[fields[2]];
-				return this.factoryToPaste(fields[1], data);
+				return BattleFactory.factoryToPaste(fields[1], data);
 			}
 			case 'formats': {
 				return Object.keys(this.factorySets).map((x) => x.endsWith('.txt') ? x.slice(0, -4) : x).join(', ');
@@ -701,6 +685,25 @@ export default class BattleFactory {
 		null;
 	}
 
+	static factoryToPaste(species: string, data: any): string {
+		let buf = `${species} weight ${data[species].weight}`;
+		for(const x of data[species].sets as FactorySet[]) {
+			const evs = Object.entries(x.evs).filter((y) => y[1] > 0).map((y) => `${y[1]} ${y[0]}`).join(' / ');
+			const ivs = Object.entries(x.ivs).filter((y) => y[1] < 31).map((y) => `${y[1]} ${y[0]}`).join(' / ');
+			buf += '\n\n';
+			buf += `${x.weight}% @ ${x.item.join(' / ')}\n`;
+			buf += `Ability: ${x.ability.join(' / ')}\n`;
+			if(evs) buf += `EVs: ${evs}\n`;
+			buf += `${x.nature.join(' / ')} Nature\n`;
+			if(ivs) buf += `IVs: ${ivs}\n`;
+			for(const y of x.moves) {
+				buf += `- ${y.join(' / ')}\n`;
+			}
+			buf = buf.slice(0, -1);
+		}
+		return buf;
+	}
+
 	static serve(services: Services): Express.Application {
 		const app = express();
 		app.get('/', (req, res) => {
@@ -729,7 +732,7 @@ export default class BattleFactory {
 			let buf = `<h1>${meta}</h1>`;
 			for(const species in services.BattleFactory.factorySets[meta]) {
 				buf += '===== ';
-				buf += services.BattleFactory.factoryToPaste(species, services.BattleFactory.factorySets[meta]);
+				buf += BattleFactory.factoryToPaste(species, services.BattleFactory.factorySets[meta]);
 				buf += '\n\n';
 			}
 			buf = buf.replaceAll('\n', '<br />')

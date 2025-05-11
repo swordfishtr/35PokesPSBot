@@ -13,13 +13,13 @@ import express from 'express';
 import { Temporal } from '@js-temporal/polyfill';
 import { fsLog, importJSON, PATH_CONFIG, PATH_CRASHLOG, PATH_MISCLOG, PATH_PS_FACTORYSETS, PATH_PS_INDEX, Services } from './globals.js';
 
+process.chdir(import.meta.dirname);
 process.on('uncaughtExceptionMonitor', (err, origin) => {
 	const time = Temporal.Now.zonedDateTimeISO().toLocaleString();
 	const crashlog = `${time} ${origin}\n${err.stack}\n\n`;
 	fsLog(PATH_CRASHLOG, crashlog);
 });
 
-process.chdir(import.meta.dirname);
 log('Welcome to 35Pokes Pokemon Showdown Bot Controller!');
 log(`Project path: ${import.meta.dirname}`);
 log(`Global PATH_CONFIG: ${PATH_CONFIG}`);
@@ -60,10 +60,11 @@ rl.on('line', (input) => {
 		}
 		case 'dump': {
 			log('DUMP');
+			let buf = '';
 			for(const x in services) {
-				console.log(services[x as keyof Services]?.dump() ?? `Could not dump ${x}`);
+				buf += services[x as keyof Services]?.dump() ?? `Could not dump ${x}`;
 			}
-			log('===');
+			log(buf);
 			return;
 		}
 		default: {
@@ -77,8 +78,10 @@ rl.on('line', (input) => {
 loadAll();
 
 function log(msg: string) {
-	console.log(`=== ${msg} ===`);
-	fsLog(PATH_MISCLOG, `=== ${msg} ===`);
+	if(msg.includes('\n')) msg = `=== === ===\n${msg}\n=== === ===`;
+	else msg = `=== ${msg} ===`;
+	console.log(msg);
+	fsLog(PATH_MISCLOG, `${msg}\n`);
 }
 
 async function loadAll() {
