@@ -125,13 +125,7 @@ export default class PSBot {
 			const timeoutID = setTimeout(() => {
 				reject(new TimeoutRejection(description));
 				const i = this.ls.findIndex((x) => x.predicate === predicate);
-				// TODO: remove after confirming everything works
-				if(i === -1) {
-					this.log(`Listener was not removed after resolution: ${description}`, LogSign.ERR);
-					return;
-				}
 				this.ls.splice(i, 1);
-				//this.log(`Timed out after ${timeout} seconds: ${description}`, LogSign.WARN);
 			}, timeout * 1000);
 			this.ls.push({ predicate, timeoutID, resolve, reject, description });
 		});

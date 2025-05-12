@@ -39,43 +39,11 @@ const port: number = (() => {
 	if(conf.portEnv) return process.env[conf.portEnv];
 	return 3000;
 })();
+let server: any;
 
 const rl = readline.createInterface(process.stdin, process.stdout);
 
-rl.on('line', (input) => {
-  const fields = input.toLowerCase().split(' ');
-	switch(fields[0]) {
-		case 'exit':
-		case 'quit':
-		case 'bye':
-		case 'q': {
-			// should shutdown everything first
-			log('BYE BYE');
-			process.exit(0);
-		}
-		case 'restart':
-		case 'r': {
-			log('To be implemented.');
-			return;
-		}
-		case 'dump': {
-			log('DUMP');
-			let buf = '';
-			for(const x in services) {
-				buf += services[x as keyof Services]?.dump() ?? `Could not dump ${x}`;
-			}
-			log(buf);
-			return;
-		}
-		default: {
-			log('Controller Commands (type and enter):');
-			log('exit: Shutdown everything and exit. Alias: quit, bye, q');
-			log('restart service?: Restart service or else everything. Alias: r');
-		}
-	}
-});
-
-loadAll();
+loadAll().then(() => rl.on('line', consoleInput));
 
 function log(msg: string) {
 	if(msg.includes('\n')) msg = `=== === ===\n${msg}\n=== === ===`;
@@ -88,8 +56,8 @@ async function loadAll() {
 	await Promise.all([
 		loadBattleFactory()
 	]);
-	if(importJSON(PATH_CONFIG).server.enable) {
-		app.listen(port, () => {
+	if(!server && importJSON(PATH_CONFIG).server.enable) {
+		server = app.listen(port, () => {
 			log(`Express listening on port ${port}.`);
 		});
 	}
@@ -120,10 +88,65 @@ async function loadBattleFactory() {
 
 	services.BattleFactory = new BattleFactory();
 	services.BattleFactory.onShutdown = () => {
-		log('To restart Battle Factory, enter restart bf.');
+		log('Battle Factory stopped, restarting in 15 minutes.');
+		setTimeout(() => loadBattleFactory(), 15 * 60 * 1000);
 	};
 	services.BattleFactory.init();
 	await services.BattleFactory.connect();
 
 	log('Battle Factory started.');
+}
+
+function consoleInput(input: string) {
+  const fields = input.toLowerCase().split(' ');
+	switch(fields[0]) {
+		case 'exit':
+		case 'quit':
+		case 'bye':
+		case 'q': {
+			// should shutdown everything first
+			log('BYE BYE');
+			process.exit(0);
+		}
+		case 'restart':
+		case 'r': {
+			switch(fields[1]) {
+				case undefined:
+				case '':
+				case 'everything':
+				case 'all': {
+					log('Restarting everything.');
+					loadAll();
+					return;
+				}
+				case 'battlefactory':
+				case 'factory':
+				case 'bf': {
+					log('Restarting Battle Factory.');
+					loadBattleFactory();
+					return;
+				}
+				default: {
+					log(`No such service as ${fields[1]} - valid options: bf, all.`);
+					return;
+				}
+			}
+		}
+		case 'dump': {
+			log('DUMP');
+			let buf = '';
+			let x: keyof Services;
+			for(x in services) {
+				buf += services[x]?.dump() ?? `Could not dump ${x}`;
+			}
+			log(buf);
+			return;
+		}
+		default: {
+			log('Controller Commands (type and enter):');
+			log('exit: Shutdown everything and exit. Alias: quit, bye, q');
+			log('restart service?|all: Restart service or else everything. Alias: r');
+			return;
+		}
+	}
 }

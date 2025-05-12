@@ -167,6 +167,7 @@ export default class BattleFactory {
 	}
 
 	shutdown() {
+		if(this.#state === State.OFF) return;
 		if(![State.INIT, State.ON].includes(this.#state)) throw new Error();
 
 		delete this.bot1?.onDisconnect;
