@@ -8,6 +8,7 @@
 	"battleFactory": {
 		"enable": false,
 		"debug": true,
+		"maxRestarts": 0,
 		"serve": false,
 		"interval": 0,
 		"sudoers": [],

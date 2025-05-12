@@ -29,8 +29,8 @@ log(`Global PATH_PS_FACTORYSETS: ${PATH_PS_FACTORYSETS}`);
 log(`Global PATH_PS_INDEX: ${PATH_PS_INDEX}`);
 log('To exit gracefully, enter exit.');
 
-// Express can depend on this.
 const services: Services = {};
+const servicesStopped: { [k in keyof Services]: number } = {};
 
 const app = express();
 const port: number = (() => {
@@ -64,7 +64,7 @@ async function loadAll() {
 }
 
 async function loadBattleFactory() {
-	const { enable } = importJSON(PATH_CONFIG).battleFactory;
+	const { enable, maxRestarts } = importJSON(PATH_CONFIG).battleFactory;
 	if(!enable) {
 		log('Battle Factory is not enabled.');
 		return;
@@ -87,14 +87,23 @@ async function loadBattleFactory() {
 	}
 
 	services.BattleFactory = new BattleFactory();
+	servicesStopped.BattleFactory ??= 0;
 	services.BattleFactory.onShutdown = () => {
-		log('Battle Factory stopped, restarting in 15 minutes.');
-		setTimeout(() => loadBattleFactory(), 15 * 60 * 1000);
+		servicesStopped.BattleFactory!++;
+		setTimeout(() => {
+			servicesStopped.BattleFactory!--;
+		}, 30 * 60 * 1000);
+		if(servicesStopped.BattleFactory! > maxRestarts) {
+			log('Battle Factory has stopped too often recently. To manually restart it enter restart bf.');
+			return;
+		}
+		log('Battle Factory has stopped, restarting in 5 minutes.');
+		setTimeout(() => loadBattleFactory(), 5 * 60 * 1000);
 	};
+
 	services.BattleFactory.init();
 	await services.BattleFactory.connect();
-
-	log('Battle Factory started.');
+	log('Battle Factory has started.');
 }
 
 function consoleInput(input: string) {
