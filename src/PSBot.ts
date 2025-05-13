@@ -1,7 +1,7 @@
 import { styleText } from 'node:util';
 import { Temporal } from '@js-temporal/polyfill';
 import {
-	Auth, fsLog, LogSign, PATH_MISCLOG, Predicate, PredicateRejection, PredicateVar, ShutdownRejection, TimeoutRejection
+	Auth, BotState, fsLog, LogSign, PATH_MISCLOG, Predicate, PredicateRejection, PredicateVar, ShutdownRejection, TimeoutRejection
 } from './globals.js';
 
 interface Listener {
@@ -18,6 +18,9 @@ export default class PSBot {
 
 	readonly botname: string;
 	readonly debug: boolean;
+
+	#state: BotState = BotState.NEW;
+	get state() { return this.#state; }
 
 	readonly #ws?: WebSocket;
 	readonly ls: Listener[] = [];
@@ -44,6 +47,7 @@ export default class PSBot {
 	// #region Internal use
 
 	#closing = (err: CloseEvent) => {
+		this.#state = BotState.DISCONNECTED;
 		this.#ws!.removeEventListener('message', this.receiveNoError);
 		this.#ws!.removeEventListener('error', this.#logError);
 		while(this.ls.length) {
@@ -54,10 +58,6 @@ export default class PSBot {
 		this.log(err.reason, LogSign.ERR);
 		this.log('Connection closed.');
 		if(this.onDisconnect) this.onDisconnect();
-	}
-
-	ensureConnected() {
-		if(!this.#ws || this.#ws.readyState !== WebSocket.OPEN) throw new Error('Not connected.');
 	}
 
 	log(msg: string, sign: LogSign = LogSign.INFO) {
@@ -116,7 +116,7 @@ export default class PSBot {
 
 	/** Awaits a message satisfying predicate for timeout seconds. */
 	await(description: string, timeout: number, predicate: Predicate): Promise<string> {
-		this.ensureConnected();
+		if(this.#state < BotState.ONLINE || this.#state === BotState.DISCONNECTED) throw new Error('Not connected.');
 		if(timeout < 5) throw new RangeError('Timeout must be at least 5 seconds.');
 		description = `Awaiting ${description}.`;
 		return new Promise((resolve, reject) => {
@@ -130,7 +130,8 @@ export default class PSBot {
 	}
 
 	connect() {
-		if(this.#ws) throw new Error('This bot has already been consumed.');
+		if(this.#state !== BotState.NEW) throw new Error('This bot has already been consumed.');
+		this.#state = BotState.CONNECTING;
 		// @ts-expect-error Readonly-ish
 		this.#ws = new WebSocket(PSBot.getURL());
 		this.#ws.addEventListener('message', this.receiveNoError);
@@ -141,6 +142,7 @@ export default class PSBot {
 			const timeoutID = setTimeout(() => reject(new TimeoutRejection('connection to websocket')), 30 * 1000);
 			this.#ws!.addEventListener('open', () => {
 				clearTimeout(timeoutID);
+				this.#state = BotState.ONLINE;
 				resolve(void 0);
 				this.log('Connection to websocket established.');
 			}, { once: true });
@@ -148,12 +150,15 @@ export default class PSBot {
 	}
 
 	disconnect() {
-		if(!this.#ws) throw new Error('Tried to close before connecting.');
-		this.#ws.close();
+		if(this.#state === BotState.NEW) throw new Error('Tried to close before connecting.');
+		this.#state = BotState.DISCONNECTED;
+		this.#ws?.close();
 	}
 
 	async login(auth: Auth) {
-		this.ensureConnected();
+		if(this.#state < BotState.ONLINE) throw new Error('Tried to login before online.');
+		if(this.#state > BotState.ONLINE) throw new Error('Tried to login more than once.');
+		this.#state = BotState.LOGIN;
 
 		const msg1 = await this.await('challstr', 30, this.#CONNECT_1);
 
@@ -174,12 +179,13 @@ export default class PSBot {
 
 		// @ts-expect-error Readonly-ish
 		this.username = auth.name;
+		this.#state = BotState.USERNAME;
 
 		this.log('Login successful.');
 	}
 
 	send(msg: string) {
-		this.ensureConnected();
+		if(this.#state < BotState.ONLINE || this.#state === BotState.DISCONNECTED) throw new Error('Not connected.');
 		if(msg.includes('\n') && !msg.includes('!code '))
 			throw new Error('Newlines without !code are not allowed to be sent.');
 		this.log(msg, LogSign.OUT);

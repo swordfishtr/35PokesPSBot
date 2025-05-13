@@ -49,7 +49,16 @@ export enum LogSign {
 	ERR = 'XX'
 }
 
-export enum State {
+export enum BotState {
+	NEW = 0,
+	CONNECTING = 1,
+	ONLINE = 2,
+	LOGIN = 3,
+	USERNAME = 4,
+	DISCONNECTED = 5
+}
+
+export enum ServiceState {
 	NEW = 0,
 	INIT = 1,
 	ON = 2,

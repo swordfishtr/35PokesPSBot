@@ -13,7 +13,7 @@ import PokemonShowdown from '../../pokemon-showdown/dist/sim/index.js';
 const { Dex, Teams, TeamValidator, toID } = PokemonShowdown;
 import {
 	Auth, FactorySet, fsLog, importJSON, LogSign, PATH_CONFIG, PATH_MISCLOG, PATH_PS_FACTORYSETS, Predicate,
-	PredicateRejection, PredicateVar, Services, ShutdownRejection, State, TimeoutRejection
+	PredicateRejection, PredicateVar, Services, ShutdownRejection, ServiceState, TimeoutRejection
 } from './globals.js';
 
 interface Battle {
@@ -48,7 +48,7 @@ type ChallengeTable = { [user: string]: Challenge };
 
 export default class BattleFactory {
 
-	#state: State = State.NEW;
+	#state: ServiceState = ServiceState.NEW;
 	get state() { return this.#state; }
 
 	debug: boolean = false;
@@ -115,9 +115,9 @@ export default class BattleFactory {
 	}
 
 	init() {
-		if(this.#state !== State.NEW) throw new Error();
+		if(this.#state !== ServiceState.NEW) throw new Error();
 		this.loadConfig();
-		this.#state = State.INIT;
+		this.#state = ServiceState.INIT;
 	}
 
 	loadConfig() {
@@ -140,7 +140,7 @@ export default class BattleFactory {
 	}
 
 	async connect() {
-		if(this.#state !== State.INIT) throw new Error();
+		if(this.#state !== ServiceState.INIT) throw new Error();
 
 		this.bot1 = new PSBot('35 Factory Primary Bot', this.debug);
 		this.bot2 = new PSBot('35 Factory Secondary Bot', this.debug);
@@ -155,7 +155,7 @@ export default class BattleFactory {
 			await this.bot1.login(botAuth1 as Auth);
 			await this.bot2.connect();
 			await this.bot2.login(botAuth2 as Auth);
-			this.#state = State.ON;
+			this.#state = ServiceState.ON;
 			this.#queueInterval = setInterval(this.tryMatchmaking, (interval || 5) * 1000);
 			this.bot1.onMessage = this.receive;
 			this.bot2.onMessage = this.rejectChallenges(this.bot2);
@@ -167,8 +167,8 @@ export default class BattleFactory {
 	}
 
 	shutdown() {
-		if(this.#state === State.OFF) return;
-		if(![State.INIT, State.ON].includes(this.#state)) throw new Error();
+		if(this.#state === ServiceState.OFF) return;
+		if(![ServiceState.INIT, ServiceState.ON].includes(this.#state)) throw new Error();
 
 		delete this.bot1?.onDisconnect;
 		delete this.bot2?.onDisconnect;
@@ -179,7 +179,7 @@ export default class BattleFactory {
 		clearInterval(this.#queueInterval);
 		if(this.onShutdown) this.onShutdown();
 
-		this.#state = State.OFF;
+		this.#state = ServiceState.OFF;
 	}
 
 	log(msg: string, sign: Extract<LogSign, LogSign.ERR | LogSign.INFO | LogSign.WARN>) {
@@ -213,7 +213,7 @@ export default class BattleFactory {
 
 	/** Try to generate a random format battle for users in queue. */
 	async tryMatchmaking() {
-		if(this.#state !== State.ON) throw new Error();
+		if(this.#state !== ServiceState.ON) throw new Error();
 		if(!this.ready || this.queue.length < 2) return;
 
 		const [user1, user2] = this.queue.slice(0, 2);
@@ -247,7 +247,7 @@ export default class BattleFactory {
 
 	/** Returns offline usernames. */
 	async ensurePlayersOnline(...usernames: string[]): Promise<string[]> {
-		if(this.#state !== State.ON) throw new Error();
+		if(this.#state !== ServiceState.ON) throw new Error();
 
 		const userids = usernames.map(toID);
 		for(const x of userids) { this.bot1!.send(`|/cmd userdetails ${x}`); }
@@ -258,7 +258,7 @@ export default class BattleFactory {
 
 	/** Returns all the necessary random elements for prepBattle. */
 	genTeams(amount: number, format?: string | null): GeneratedTeams {
-		if(![State.INIT, State.ON].includes(this.#state)) throw new Error();
+		if(![ServiceState.INIT, ServiceState.ON].includes(this.#state)) throw new Error();
 		if(amount < 1 || amount > 10 * 1000) throw new RangeError();
 
 		let isRandom = false;
@@ -312,7 +312,7 @@ export default class BattleFactory {
 
 	/** Creates a battle and hands out invites. Returns winner or null if tie. */
 	async startBattle(battle: Battle): Promise<string | null> {
-		if(this.#state !== State.ON) throw new Error();
+		if(this.#state !== ServiceState.ON) throw new Error();
 
 		if(!this.ready) throw new Error('NOT READY!!!');
 		this.ready = false;
@@ -433,7 +433,7 @@ export default class BattleFactory {
 	}
 
 	receive(msg: string) {
-		if(this.#state !== State.ON) throw new Error();
+		if(this.#state !== ServiceState.ON) throw new Error();
 		this.rejectChallenges(this.bot1!)(msg);
 		if(this.#BOTCMD_1(msg)) return this.respondPM(msg);
 		if(this.#BOTCMD_2(msg)) return this.respondBR(msg);
@@ -441,7 +441,7 @@ export default class BattleFactory {
 
 	// Getting too fancy here ...
 	readonly rejectChallenges = (bot: PSBot) => (msg: string) => {
-		if(this.#state !== State.ON) throw new Error();
+		if(this.#state !== ServiceState.ON) throw new Error();
 		if(this.#BOTCMD_3(bot.username!)(msg)) {
 			const data = msg.split('|', 5);
 			const user = data[2].slice(1);
