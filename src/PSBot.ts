@@ -34,7 +34,6 @@ export default class PSBot {
 		this.botname = botname;
 		this.debug = debug;
 
-		this.#closing = this.#_closing.bind(this);
 		this.disconnect = this.disconnect.bind(this);
 		this.receive = this.receive.bind(this);
 		this.receiveNoError = this.receiveNoError.bind(this);
@@ -44,8 +43,7 @@ export default class PSBot {
 
 	// #region Internal use
 
-	#closing: (err: CloseEvent) => void;
-	#_closing(err: CloseEvent) {
+	#closing = (err: CloseEvent) => {
 		this.#ws!.removeEventListener('message', this.receiveNoError);
 		this.#ws!.removeEventListener('error', this.#logError);
 		while(this.ls.length) {
@@ -76,7 +74,7 @@ export default class PSBot {
 		console.log(buf);
 	}
 
-	#logError() {
+	#logError = () => {
 		this.log('An error occurred in the websocket.', LogSign.ERR);
 	}
 

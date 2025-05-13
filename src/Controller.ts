@@ -11,7 +11,7 @@
 import readline from 'readline';
 import express from 'express';
 import { Temporal } from '@js-temporal/polyfill';
-import { fsLog, importJSON, PATH_CONFIG, PATH_CRASHLOG, PATH_MISCLOG, PATH_PS_FACTORYSETS, PATH_PS_INDEX, Services } from './globals.js';
+import { fsLog, importJSON, PATH_CONFIG, PATH_CRASHLOG, PATH_MISCLOG, PATH_PS_FACTORYSETS, PATH_PS_INDEX, Services, shell } from './globals.js';
 
 process.chdir(import.meta.dirname);
 process.on('uncaughtExceptionMonitor', (err, origin) => {
@@ -22,11 +22,15 @@ process.on('uncaughtExceptionMonitor', (err, origin) => {
 
 log('Welcome to 35Pokes Pokemon Showdown Bot Controller!');
 log(`Project path: ${import.meta.dirname}`);
-log(`Global PATH_CONFIG: ${PATH_CONFIG}`);
-log(`Global PATH_CRASHLOG: ${PATH_CRASHLOG}`);
-log(`Global PATH_MISCLOG: ${PATH_MISCLOG}`);
-log(`Global PATH_PS_FACTORYSETS: ${PATH_PS_FACTORYSETS}`);
-log(`Global PATH_PS_INDEX: ${PATH_PS_INDEX}`);
+// Dependencies
+await (async () => {
+	const { error, stdout, stderr } = await shell('git -v');
+	if(error) {
+		log(`Git not found.`);
+		process.exit(1);
+	}
+	log(`Git found: ${stdout.slice(0, -1)}`);
+})();
 log('To exit gracefully, enter exit.');
 
 const services: Services = {};
@@ -106,7 +110,7 @@ async function loadBattleFactory() {
 	log('Battle Factory has started.');
 }
 
-function consoleInput(input: string) {
+async function consoleInput(input: string) {
   const fields = input.toLowerCase().split(' ');
 	switch(fields[0]) {
 		case 'exit':

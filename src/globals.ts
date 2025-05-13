@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import child_process from 'child_process';
 
 export function importJSON(m: string) {
 	return JSON.parse(fs.readFileSync(m, { encoding: 'utf-8' }));
@@ -7,6 +8,16 @@ export function importJSON(m: string) {
 
 export function fsLog(path: string, data: string) {
 	fs.appendFileSync(path, data);
+}
+
+export function shell(cmd: string, cwd?: string): Promise<{
+	error: child_process.ExecException | null, stdout: string, stderr: string
+}> {
+	return new Promise((res) => {
+		child_process.exec(cmd, { cwd }, (error, stdout, stderr) => {
+			res({ error, stdout, stderr });
+		});
+	});
 }
 
 export interface Auth {
