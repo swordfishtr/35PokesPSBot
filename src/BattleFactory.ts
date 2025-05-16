@@ -9,11 +9,9 @@ import { styleText } from 'node:util';
 import express from 'express';
 import { Temporal } from '@js-temporal/polyfill';
 import PSBot from './PSBot.js';
-import PokemonShowdown from '../../pokemon-showdown/dist/sim/index.js';
-const { Dex, Teams, TeamValidator, toID } = PokemonShowdown;
 import {
 	Auth, FactorySet, fsLog, importJSON, LogSign, PATH_CONFIG, PATH_MISCLOG, PATH_PS_FACTORYSETS, Predicate,
-	PredicateRejection, PredicateVar, Services, ShutdownRejection, ServiceState, TimeoutRejection
+	PredicateRejection, PredicateVar, Services, shell, ShutdownRejection, ServiceState, TimeoutRejection
 } from './globals.js';
 
 interface Battle {
@@ -68,6 +66,12 @@ export default class BattleFactory {
 	bot1?: PSBot;
 	bot2?: PSBot;
 
+	// Showdown
+	Dex?: typeof import('../../pokemon-showdown/dist/sim/index.js').Dex;
+	Teams?: typeof import('../../pokemon-showdown/dist/sim/index.js').Teams;
+	TeamValidator?: typeof import('../../pokemon-showdown/dist/sim/index.js').TeamValidator;
+	toID?: typeof import('../../pokemon-showdown/dist/sim/index.js').toID;
+
 	// factory-sets.json
 	factorySets: any;
 
@@ -114,22 +118,28 @@ export default class BattleFactory {
 		this.#BOTCMD_3 = this.#BOTCMD_3.bind(this);
 	}
 
-	init() {
+	async init() {
 		if(this.#state !== ServiceState.NEW) throw new Error();
-		this.loadConfig();
+		await this.loadConfig();
 		this.#state = ServiceState.INIT;
 	}
 
-	loadConfig() {
+	async loadConfig() {
 		this.factorySets = importJSON(PATH_PS_FACTORYSETS);
 
-		const formatBattleFactory = Dex.formats.get('gen9battlefactory');
-		this.factoryGenerator = Teams.getGenerator(formatBattleFactory);
+		const PS = await import('../../pokemon-showdown/dist/sim/index.js');
+		this.Dex = PS.Dex;
+		this.Teams = PS.Teams;
+		this.TeamValidator = PS.TeamValidator;
+		this.toID = PS.toID;
 
-		const format35Pokes = Dex.formats.get(this.chalcode);
-		const format35PokesUbers = Dex.formats.get(this.chalcodeUbers);
-		this.factoryValidator = new TeamValidator(format35Pokes);
-		this.factoryValidatorUbers = new TeamValidator(format35PokesUbers);
+		const formatBattleFactory = this.Dex.formats.get('gen9battlefactory');
+		this.factoryGenerator = this.Teams.getGenerator(formatBattleFactory);
+
+		const format35Pokes = this.Dex.formats.get(this.chalcode);
+		const format35PokesUbers = this.Dex.formats.get(this.chalcodeUbers);
+		this.factoryValidator = new this.TeamValidator(format35Pokes);
+		this.factoryValidatorUbers = new this.TeamValidator(format35PokesUbers);
 
 		const { banned, debug, sudoers } = importJSON(PATH_CONFIG).battleFactory;
 		this.debug = !!debug;
@@ -249,7 +259,7 @@ export default class BattleFactory {
 	async ensurePlayersOnline(...usernames: string[]): Promise<string[]> {
 		if(this.#state !== ServiceState.ON) throw new Error();
 
-		const userids = usernames.map(toID);
+		const userids = usernames.map(this.toID!);
 		for(const x of userids) { this.bot1!.send(`|/cmd userdetails ${x}`); }
 		const queries = userids.map((x) => this.bot1!.await(`userdetails ${x}`, this.lagGracePeriod, this.#BATTLE_1(x)));
 		const responses = await Promise.allSettled(queries);
@@ -302,10 +312,11 @@ export default class BattleFactory {
 
 	/** Returns organized output from genTeams for genBattle. */
 	prepBattle(user1: string, user2: string, genTeams: GeneratedTeams): Battle {
+		if(this.#state < ServiceState.INIT) throw new Error();
 		const { teams: [team1, team2], ...misc } = genTeams;
 		return {
-			side1: { username: user1, team: Teams.pack(team1) },
-			side2: { username: user2, team: Teams.pack(team2) },
+			side1: { username: user1, team: this.Teams!.pack(team1) },
+			side2: { username: user2, team: this.Teams!.pack(team2) },
 			...misc
 		};
 	}
@@ -398,7 +409,7 @@ export default class BattleFactory {
 		])
 		.catch((err) => {
 			if(!(err instanceof PredicateRejection)) throw err;
-			const forfeit = toID(err.message.split('|').pop()!.slice(10, -24));
+			const forfeit = this.toID!(err.message.split('|').pop()!.slice(10, -24));
 			if(forfeit === battle.side1.username) {
 				rejectionWin = battle.side2.username;
 				if(!p2responded) this.bot2!.send(`|/cancelchallenge ${battle.side2.username}`);
@@ -451,7 +462,7 @@ export default class BattleFactory {
 
 	async respondPM(msg: string) {
 		const data = msg.split('|', 5);
-		const user = toID(data[2].slice(1));
+		const user = this.toID!(data[2].slice(1));
 		const fields = data[4].split(' ');
 
 		const out = await this.runCommand(user, ...fields);
@@ -470,7 +481,7 @@ export default class BattleFactory {
 	async respondBR(msg: string) {
 		const data = msg.split('|', 4);
 		const room = data[0].slice(1, -1);
-		const user = toID(data[2].slice(1));
+		const user = this.toID!(data[2].slice(1));
 		const fields = data[3].slice(1).split(' ');
 
 		const out = await this.runCommand(user, ...fields);
@@ -513,7 +524,7 @@ export default class BattleFactory {
 					return buf;
 				}
 
-				const target = toID(fields[1]);
+				const target = this.toID!(fields[1]);
 				if(!target) {
 					buf += `Target username ${fields[1]} is invalid.`;
 					return buf;
@@ -574,7 +585,7 @@ export default class BattleFactory {
 				if(!fields[2]) return 'Provide a format in your query.';
 				if(!fields[2].endsWith('.txt')) fields[2] += '.txt';
 				if(!(fields[2] in this.factorySets)) return 'Format not found. Check your syntax, it should be like ```2025/2025_04```';
-				fields[1] = toID(fields[1]);
+				fields[1] = this.toID!(fields[1]);
 				if(!(fields[1] in this.factorySets[fields[2]])) return 'Species not found in format. Try including or excluding forme suffix.';
 				const data = this.factorySets[fields[2]];
 				return BattleFactory.factoryToPaste(fields[1], data);
@@ -642,7 +653,7 @@ export default class BattleFactory {
 		const data = msg.split('|', 5);
 		const prelim = data[0] === '' &&
 		data[1] === 'pm' &&
-		toID(data[2]?.slice(1)) === user &&
+		this.toID!(data[2]?.slice(1)) === user &&
 		data[3]?.slice(1) === bot;
 		if(!prelim) return null;
 		if(data[4] === '/text You accepted the battle invite') return true;
@@ -740,6 +751,12 @@ export default class BattleFactory {
 			res.send(buf);
 		});
 		return app;
+	}
+
+	/** Returns an array of missing dependencies. This will only run on startup, so blocking operations are fine. */
+	static checkDependencies(): string[] {
+		const missingDependencies: string[] = [];
+		return missingDependencies;
 	}
 
 }

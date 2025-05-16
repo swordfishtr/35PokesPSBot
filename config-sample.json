@@ -1,7 +1,7 @@
 {
 	"server": {
 		"enable": false,
-		"port": 0,
+		"port": -1,
 		"portEnv": "",
 		"password": ""
 	},

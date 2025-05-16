@@ -3,8 +3,8 @@
  * 
  * The "server" configuration is used here. Details:
  * enable - whether to serve data from services that opt in.
- * port - system port to listen on, 0 for portEnv.
- * portEnv - environment variable for the port.
+ * port - system port to listen on, 0 for system, -1 for portEnv.
+ * portEnv - environment variable for the port, "" for system.
  * password - if not "", serve only if the request provides password.
  */
 
@@ -18,6 +18,9 @@ process.on('uncaughtExceptionMonitor', (err, origin) => {
 	const time = Temporal.Now.zonedDateTimeISO().toLocaleString();
 	const crashlog = `${time} ${origin}\n${err.stack}\n\n`;
 	fsLog(PATH_CRASHLOG, crashlog);
+});
+process.on('exit', (code) => {
+	fsLog(PATH_MISCLOG, `Process exiting with code ${code} ...\n`);
 });
 
 log('Welcome to 35Pokes Pokemon Showdown Bot Controller!');
@@ -39,9 +42,9 @@ const servicesStopped: { [k in keyof Services]: number } = {};
 const app = express();
 const port: number = (() => {
 	const conf = importJSON(PATH_CONFIG).server;
-	if(conf.port) return conf.port;
+	if(conf.port >= 0) return conf.port;
 	if(conf.portEnv) return process.env[conf.portEnv];
-	return 3000;
+	return 0;
 })();
 let server: any;
 
@@ -74,9 +77,10 @@ async function loadBattleFactory() {
 		return;
 	}
 
-	// Check dependencies here
-
 	const BattleFactory = (await import('./BattleFactory.js')).default;
+
+	const missingDependencies = BattleFactory.checkDependencies();
+	if(missingDependencies.length) throw new Error(`Battle Factory missing dependencies: ${missingDependencies.join(', ')}`);
 
 	// On first run, Express stack needs to be configured;
 	// on non-first runs, the previous instance needs to be shut down.
@@ -105,7 +109,7 @@ async function loadBattleFactory() {
 		setTimeout(() => loadBattleFactory(), 5 * 60 * 1000);
 	};
 
-	services.BattleFactory.init();
+	await services.BattleFactory.init();
 	await services.BattleFactory.connect();
 	log('Battle Factory has started.');
 }
@@ -147,12 +151,18 @@ async function consoleInput(input: string) {
 		}
 		case 'dump': {
 			log('DUMP');
-			let buf = '';
-			let x: keyof Services;
-			for(x in services) {
-				buf += services[x]?.dump() ?? `Could not dump ${x}`;
+			let buf = 'Controller Dump\n';
+			buf += `services: ${Object.keys(services).join(', ')};\n`;
+			buf += `servicesStopped: ${Object.entries(servicesStopped).map((x) => `${x[0]}: ${x[1]}`).join(', ')};\n`;
+			let s: keyof Services;
+			for(s in services) {
+				buf += services[s]?.dump() ?? `Could not dump ${s}\n`;
 			}
 			log(buf);
+			return;
+		}
+		case 'env': {
+			log(JSON.stringify(process.env));
 			return;
 		}
 		default: {
