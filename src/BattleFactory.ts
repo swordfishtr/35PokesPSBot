@@ -5,6 +5,8 @@
  * tbd
  */
 
+import fs from 'fs';
+import path from 'path';
 import { styleText } from 'node:util';
 import express from 'express';
 import { Temporal } from '@js-temporal/polyfill';
@@ -39,10 +41,6 @@ type Challenge = { target: string, format: string | null, timeoutid: NodeJS.Time
 type ChallengeTable = { [user: string]: Challenge };
 
 // TODO: fill out empty errors.
-
-// Ubers support requires a patch to dist/data/random-battles/gen9/teams.js (25-05-01)
-// - species: typeof species.battleOnly === "string" ? species.battleOnly : species.name,
-// + species: species.name,
 
 export default class BattleFactory {
 
@@ -127,7 +125,7 @@ export default class BattleFactory {
 	async loadConfig() {
 		this.factorySets = importJSON(PATH_PS_FACTORYSETS);
 
-		const PS = await import('../../pokemon-showdown/dist/sim/index.js');
+		const PS = (await import('../../pokemon-showdown/dist/sim/index.js')).default;
 		this.Dex = PS.Dex;
 		this.Teams = PS.Teams;
 		this.TeamValidator = PS.TeamValidator;
@@ -297,14 +295,24 @@ export default class BattleFactory {
 		const teams: any[] = [];
 		while(teams.length < amount) {
 			const team = this.factoryGenerator.getTeam();
-				const problems: string[] | null = validator.baseValidateTeam(team);
-				if(problems?.length) {
-					this.teamErrors.push(problems.join(', '));
-					// hardcode max 20 errors
-					if(this.teamErrors.length >= 20) throw new Error(`Too many validator errors:\n${this.teamErrors.join(';\n')}`);
-					continue;
+			// The generator reverts battle-only forms to base; we'll undo it manually.
+			if(validator === this.factoryValidatorUbers) {
+				for(const mon of team) {
+					// This will fail in case of >1 forms of a species in factory sets.
+					if(!(this.toID!(mon.species) in this.factorySets[format])) {
+						const proper = Object.keys(this.factorySets[format]).find((x) => this.Dex!.species.get(x).battleOnly === mon.species)!;
+						mon.species = proper;
+					}
 				}
-				teams.push(team);
+			}
+			const problems: string[] | null = validator.baseValidateTeam(team);
+			if(problems?.length) {
+				this.teamErrors.push(problems.join(', '));
+				// hardcode max 20 errors
+				if(this.teamErrors.length >= 20) throw new Error(`Too many validator errors:\n${this.teamErrors.join(';\n')}`);
+				continue;
+			}
+			teams.push(team);
 		}
 
 		return { format, isRandom, chalcode, teams };
@@ -754,9 +762,113 @@ export default class BattleFactory {
 	}
 
 	/** Returns an array of missing dependencies. This will only run on startup, so blocking operations are fine. */
-	static checkDependencies(): string[] {
+	static checkDependencies(): Promise<string[]> {
 		const missingDependencies: string[] = [];
-		return missingDependencies;
+		const DIR_REPOS = path.normalize('../..');
+		const SRC_INDEX = path.normalize('https://github.com/swordfishtr/35PokesPSBot');
+		const DIR_INDEX = path.normalize('../../35PokesIndex');
+		const SRC_PS = path.normalize('https://github.com/smogon/pokemon-showdown');
+		const DIR_PS = path.normalize('../../pokemon-showdown');
+
+		// 35PokesIndex
+		console.log('Checking availability of 35PokesIndex ...');
+		const DEP_INDEX_PS = shell('git remote get-url origin', DIR_INDEX)
+		.then((remote) => {
+			remote = remote.slice(0, -1);
+			console.log(remote);
+			if(remote === SRC_INDEX) {
+				console.log('Available.');
+				return true;
+			}
+			console.log('Incorrect repository. Deleting and cloning ...');
+			return false;
+		})
+		.catch((e) => {
+			if(![128, 'ENOENT'].includes(e.code)) throw e;
+			console.log('Unavailable. Cloning ...');
+			return false;
+		})
+		.then((repoExists) => {
+			if(!repoExists) {
+				fs.rmSync(DIR_INDEX, { recursive: true, force: true });
+				return shell(`git clone ${SRC_INDEX}`, DIR_REPOS).then(() => true);
+			}
+			return false;
+		})
+		.then((repoIsNew) => {
+			if(!repoIsNew) {
+				console.log('Checking updates ...');
+				return shell('git pull', DIR_INDEX);
+			}
+		})
+		.then(() => {
+			console.log('Done.');
+			return true;
+		})
+		.catch((e) => {
+			console.log(`Error occurred during dependency check of 35PokesIndex: ${e.message}`);
+			missingDependencies.push('35PokesIndex');
+			return false;
+		})
+		// pokemon-showdown
+		.then((success) => {
+			if(!success) throw new Error();
+			console.log('Checking availability of pokemon-showdown ...');
+			return shell('git remote get-url origin', DIR_PS);
+		})
+		.then((remote) => {
+			remote = remote.slice(0, -1);
+			console.log(remote);
+			if(remote === SRC_PS) {
+				console.log('Available.');
+				return true;
+			}
+			console.log('Incorrect repository. Deleting and cloning ...');
+			return false;
+		})
+		.catch((e) => {
+			if(![128, 'ENOENT'].includes(e.code)) throw e;
+			console.log('Unavailable. Cloning ...');
+			return false;
+		})
+		.then((repoExists) => {
+			if(!repoExists) {
+				fs.rmSync(DIR_INDEX, { recursive: true, force: true });
+				return shell(`git clone ${SRC_PS}`, DIR_REPOS).then(() => true);
+			}
+			return false;
+		})
+		.then((repoIsNew) => {
+			if(!repoIsNew) {
+				console.log('Checking updates ...');
+				return shell('git pull', DIR_PS);
+			}
+		})
+		.then(() => {
+			console.log('Checking dependencies ...');
+			return shell('npm install', DIR_PS);
+		})
+		.then(() => {
+			console.log('Running build ...');
+			return shell('node build decl', DIR_PS);
+		})
+		.then(() => {
+			console.log('Copying custom factory-sets.json ...');
+			fs.copyFileSync(
+				path.normalize(`${DIR_INDEX}/factory-sets.json`),
+				path.normalize(`${DIR_PS}/dist/data/random-battles/gen9/factory-sets.json`)
+			);
+			console.log('Done.');
+		})
+		.catch((e) => {
+			console.log(`Error occurred during dependency check of 35PokesIndex: ${e.message}`);
+			missingDependencies.push('pokemon-showdown');
+		});
+
+		return Promise.all([
+			DEP_INDEX_PS
+		])
+		.then(() => missingDependencies);
 	}
 
 }

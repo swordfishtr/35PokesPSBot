@@ -62,6 +62,7 @@ export default class PSBot {
 
 	log(msg: string, sign: LogSign = LogSign.INFO) {
 		if(!this.debug) return;
+		if(msg.length > 400) msg = `${msg.slice(0, 400 - 3)}...`;
 		const time = Temporal.Now.zonedDateTimeISO().toLocaleString();
 		let buf = `${time} :: ${this.botname} `;
 		if(this.username) buf += `as ${this.username} `;

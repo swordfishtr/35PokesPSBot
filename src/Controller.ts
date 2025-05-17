@@ -9,7 +9,6 @@
  */
 
 import readline from 'readline';
-import express from 'express';
 import { Temporal } from '@js-temporal/polyfill';
 import { fsLog, importJSON, PATH_CONFIG, PATH_CRASHLOG, PATH_MISCLOG, PATH_PS_FACTORYSETS, PATH_PS_INDEX, Services, shell } from './globals.js';
 
@@ -26,25 +25,24 @@ process.on('exit', (code) => {
 log('Welcome to 35Pokes Pokemon Showdown Bot Controller!');
 log(`Project path: ${import.meta.dirname}`);
 // Dependencies
-await (async () => {
-	const { error, stdout, stderr } = await shell('git -v');
-	if(error) {
-		log(`Git not found.`);
-		process.exit(1);
-	}
-	log(`Git found: ${stdout.slice(0, -1)}`);
-})();
+try {
+	const git = await shell('git -v');
+	log(`Git found: ${git.slice(0, -1)}`);
+}
+catch(err) {
+	log(`Git not found. This project depends on remote repositories; please install git.`);
+	process.exit(1);
+}
 log('To exit gracefully, enter exit.');
 
 const services: Services = {};
 const servicesStopped: { [k in keyof Services]: number } = {};
 
-const app = express();
-const port: number = (() => {
-	const conf = importJSON(PATH_CONFIG).server;
-	if(conf.port >= 0) return conf.port;
-	if(conf.portEnv) return process.env[conf.portEnv];
-	return 0;
+const { app, port } = await (async () => {
+	const { enable, port: portNum, portEnv } = importJSON(PATH_CONFIG).server;
+	const app = enable ? (await import('express')).default() : null;
+	const port: number = portNum >= 0 ? portNum : portEnv ? process.env[portEnv] : 0;
+	return { app, port };
 })();
 let server: any;
 
@@ -63,7 +61,7 @@ async function loadAll() {
 	await Promise.all([
 		loadBattleFactory()
 	]);
-	if(!server && importJSON(PATH_CONFIG).server.enable) {
+	if(app && !server && importJSON(PATH_CONFIG).server.enable) {
 		server = app.listen(port, () => {
 			log(`Express listening on port ${port}.`);
 		});
@@ -79,17 +77,17 @@ async function loadBattleFactory() {
 
 	const BattleFactory = (await import('./BattleFactory.js')).default;
 
-	const missingDependencies = BattleFactory.checkDependencies();
+	const missingDependencies = await BattleFactory.checkDependencies();
 	if(missingDependencies.length) throw new Error(`Battle Factory missing dependencies: ${missingDependencies.join(', ')}`);
 
 	// On first run, Express stack needs to be configured;
 	// on non-first runs, the previous instance needs to be shut down.
-	// Otherwise these are unrelated actions, don't get confused.
+	// Otherwise these are unrelated actions; don't get confused.
 	if(services.BattleFactory) {
 		delete services.BattleFactory.onShutdown;
 		services.BattleFactory.shutdown();
 	}
-	else {
+	else if(app){
 		// @ts-expect-error Some typing nonsense
 		app.use('/bf', BattleFactory.serve(services));
 	}

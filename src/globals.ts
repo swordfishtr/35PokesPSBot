@@ -10,12 +10,12 @@ export function fsLog(path: string, data: string) {
 	fs.appendFileSync(path, data);
 }
 
-export function shell(cmd: string, cwd?: string): Promise<{
-	error: child_process.ExecException | null, stdout: string, stderr: string
-}> {
-	return new Promise((res) => {
+/** throws child_process.ExecException | NodeJS.ErrnoException */
+export function shell(cmd: string, cwd?: string): Promise<string> {
+	return new Promise((res, rej) => {
 		child_process.exec(cmd, { cwd }, (error, stdout, stderr) => {
-			res({ error, stdout, stderr });
+			if(error) rej(error);
+			res(stdout);
 		});
 	});
 }
