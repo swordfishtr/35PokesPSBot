@@ -765,9 +765,9 @@ export default class BattleFactory {
 	static checkDependencies(): Promise<string[]> {
 		const missingDependencies: string[] = [];
 		const DIR_REPOS = path.normalize('../..');
-		const SRC_INDEX = path.normalize('https://github.com/swordfishtr/35PokesPSBot');
+		const SRC_INDEX = 'https://github.com/swordfishtr/35PokesIndex';
 		const DIR_INDEX = path.normalize('../../35PokesIndex');
-		const SRC_PS = path.normalize('https://github.com/smogon/pokemon-showdown');
+		const SRC_PS = 'https://github.com/smogon/pokemon-showdown';
 		const DIR_PS = path.normalize('../../pokemon-showdown');
 
 		// 35PokesIndex
@@ -806,7 +806,8 @@ export default class BattleFactory {
 			return true;
 		})
 		.catch((e) => {
-			console.log(`Error occurred during dependency check of 35PokesIndex: ${e.message}`);
+			console.log(`Error ${e.code ?? '?'} occurred during dependency check of 35PokesIndex: ${e.message ?? '?'}`);
+			if(e.code === 128) console.log('Try using fix/docker-git-fix.sh');
 			missingDependencies.push('35PokesIndex');
 			return false;
 		})
@@ -846,7 +847,7 @@ export default class BattleFactory {
 		})
 		.then(() => {
 			console.log('Checking dependencies ...');
-			return shell('npm install', DIR_PS);
+			return shell('npm install --omit=optional', DIR_PS);
 		})
 		.then(() => {
 			console.log('Running build ...');
@@ -861,7 +862,7 @@ export default class BattleFactory {
 			console.log('Done.');
 		})
 		.catch((e) => {
-			console.log(`Error occurred during dependency check of 35PokesIndex: ${e.message}`);
+			console.log(`Error ${e.code ?? '?'} occurred during dependency check of pokemon-showdown: ${e.message ?? '?'}`);
 			missingDependencies.push('pokemon-showdown');
 		});
 
