@@ -69,7 +69,7 @@ async function loadAll() {
 }
 
 async function loadBattleFactory() {
-	const { enable, maxRestarts } = importJSON(PATH_CONFIG).battleFactory;
+	const { enable, maxRestarts, skipBuild } = importJSON(PATH_CONFIG).battleFactory;
 	if(!enable) {
 		log('Battle Factory is not enabled.');
 		return;
@@ -77,7 +77,7 @@ async function loadBattleFactory() {
 
 	const BattleFactory = (await import('./BattleFactory.js')).default;
 
-	const missingDependencies = await BattleFactory.checkDependencies();
+	const missingDependencies = await BattleFactory.checkDependencies(skipBuild);
 	if(missingDependencies.length) throw new Error(`Battle Factory missing dependencies: ${missingDependencies.join(', ')}`);
 
 	// On first run, Express stack needs to be configured;

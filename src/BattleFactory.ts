@@ -2,7 +2,16 @@
  * Battle Factory service
  * 
  * Configuration details:
- * tbd
+ * enable - whether Controller should run this service.
+ * debug - whether to display informational logs.
+ * skipBuild - whether to skip pokemon-showdown dependency checks and build.
+ * Make sure to provide the files manually. Required for systems with <1GB of memory.
+ * maxRestarts - max number of disconnections within 30 minutes before the autorestart stops.
+ * serve - whether to expose data via http server under /bf.
+ * interval - in seconds, how often to attempt matchmaking.
+ * sudoers - list of showdown usernames to allow admin actions.
+ * banned - list of showdown usernames to not generate battles for.
+ * botAuth1 - botAuth2 - showdown accounts for the service to operate.
  */
 
 import fs from 'fs';
@@ -762,7 +771,7 @@ export default class BattleFactory {
 	}
 
 	/** Returns an array of missing dependencies. This will only run on startup, so blocking operations are fine. */
-	static checkDependencies(): Promise<string[]> {
+	static checkDependencies(skipBuild: boolean): Promise<string[]> {
 		const missingDependencies: string[] = [];
 		const DIR_REPOS = path.normalize('../..');
 		const SRC_INDEX = 'https://github.com/swordfishtr/35PokesIndex';
@@ -846,12 +855,20 @@ export default class BattleFactory {
 			}
 		})
 		.then(() => {
+			if(skipBuild) {
+				console.log('Skipping dependency checks ...');
+				return;
+			}
 			console.log('Checking dependencies ...');
 			return shell('npm install --omit=optional', DIR_PS);
 		})
 		.then(() => {
+			if(skipBuild) {
+				console.log('Skipping build ...');
+				return;
+			}
 			console.log('Running build ...');
-			return shell('node build decl', DIR_PS);
+			return shell('node build', DIR_PS);
 		})
 		.then(() => {
 			console.log('Copying custom factory-sets.json ...');
