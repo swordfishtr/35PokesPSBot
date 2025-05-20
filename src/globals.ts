@@ -20,6 +20,15 @@ export function shell(cmd: string, cwd?: string): Promise<string> {
 	});
 }
 
+/**
+ * In NodeJS SQLite implementation, prepared statements with numbered parameters take
+ * arguments from an array. But there is a gotcha: if array index 0 is defined, even
+ * as null or undefined, the prepared statement will throw.
+ */
+export function sqlargs(...args: any[]): any {
+	return [, ...args];
+}
+
 export interface Auth {
 	name: string,
 	pass: string
@@ -38,8 +47,6 @@ export interface Services {
 export type Predicate = (msg: string) => boolean | null;
 
 export type PredicateVar = (...val: string[]) => Predicate;
-
-export type Problems = string[];
 
 export enum LogSign {
 	IN = '<<',
@@ -128,3 +135,5 @@ export const PATH_PS_INDEX = path.join(import.meta.dirname, '..', '..', 'pokemon
 export const PATH_PS_FACTORYSETS = path.join(
 	import.meta.dirname, '..', '..', 'pokemon-showdown', 'dist', 'data', 'random-battles', 'gen9', 'factory-sets.json'
 );
+
+export const PATH_LUS = path.join(import.meta.dirname, '..', 'lus.db');

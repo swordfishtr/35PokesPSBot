@@ -46,7 +46,7 @@ export default class PSBot {
 
 	// #region Internal use
 
-	#closing = (err: CloseEvent) => {
+	#closing = (e: CloseEvent) => {
 		this.#state = BotState.DISCONNECTED;
 		this.#ws!.removeEventListener('message', this.receiveNoError);
 		this.#ws!.removeEventListener('error', this.#logError);
@@ -55,7 +55,7 @@ export default class PSBot {
 			clearTimeout(x.timeoutID);
 			x.reject(new ShutdownRejection());
 		}
-		this.log(err.reason, LogSign.ERR);
+		this.log(e.reason, LogSign.ERR);
 		this.log('Connection closed.');
 		if(this.onDisconnect) this.onDisconnect();
 	}
@@ -104,10 +104,10 @@ export default class PSBot {
 	/** receive but relaxed */
 	receiveNoError(event: MessageEvent) {
 		try { this.receive(event); }
-		catch(err) {
-			if(err instanceof TypeError || err instanceof SyntaxError)
-				this.log(`Ignoring a message invalid for reason: ${err.message}`, LogSign.ERR);
-			else throw err;
+		catch(e) {
+			if(e instanceof TypeError || e instanceof SyntaxError)
+				this.log(`Ignoring a message invalid for reason: ${e.message}`, LogSign.ERR);
+			else throw e;
 		}
 	}
 

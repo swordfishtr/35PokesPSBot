@@ -17,7 +17,6 @@
 import fs from 'fs';
 import path from 'path';
 import { styleText } from 'node:util';
-import express from 'express';
 import { Temporal } from '@js-temporal/polyfill';
 import PSBot from './PSBot.js';
 import {
@@ -177,9 +176,9 @@ export default class BattleFactory {
 			this.bot1.onMessage = this.receive;
 			this.bot2.onMessage = this.rejectChallenges(this.bot2);
 		}
-		catch(err) {
+		catch(e) {
 			this.shutdown();
-			throw err;
+			throw e;
 		}
 	}
 
@@ -202,7 +201,7 @@ export default class BattleFactory {
 	log(msg: string, sign: Extract<LogSign, LogSign.ERR | LogSign.INFO | LogSign.WARN>) {
 		if(!this.debug) return;
 		const time = Temporal.Now.zonedDateTimeISO().toLocaleString();
-		let buf = `${time} :: ${msg}\n`;
+		let buf = `${time} :: BF :: ${msg}\n`;
 		fsLog(PATH_MISCLOG, buf);
 		if(sign === LogSign.INFO) buf = styleText(['green', 'bold'], buf);
 		else if(sign === LogSign.WARN) buf = styleText(['yellow', 'bold'], buf);
@@ -424,9 +423,9 @@ export default class BattleFactory {
 				}
 			})
 		])
-		.catch((err) => {
-			if(!(err instanceof PredicateRejection)) throw err;
-			const forfeit = this.toID!(err.message.split('|').pop()!.slice(10, -24));
+		.catch((e) => {
+			if(!(e instanceof PredicateRejection)) throw e;
+			const forfeit = this.toID!(e.message.split('|').pop()!.slice(10, -24));
 			if(forfeit === battle.side1.username) {
 				rejectionWin = battle.side2.username;
 				if(!p2responded) this.bot2!.send(`|/cancelchallenge ${battle.side2.username}`);
@@ -610,6 +609,12 @@ export default class BattleFactory {
 			case 'formats': {
 				return Object.keys(this.factorySets).map((x) => x.endsWith('.txt') ? x.slice(0, -4) : x).join(', ');
 			}
+			case 'update': {
+				if(!this.sudoers.includes(user)) return 'Not allowed.';
+				const { skipBuild } = importJSON(PATH_CONFIG).battleFactory;
+				const problems = await BattleFactory.checkDependencies(skipBuild);
+				return `Done! skipBuild: ${skipBuild}, problems: ${problems.join(', ') || 'none'}. Run hotpatch next.`;
+			}
 			case 'hotpatch': {
 				if(!this.sudoers.includes(user)) return 'Not allowed.';
 				this.loadConfig();
@@ -733,8 +738,8 @@ export default class BattleFactory {
 		return buf;
 	}
 
-	static serve(services: Services): Express.Application {
-		const app = express();
+	static async serve(services: Services): Promise<Express.Application> {
+		const app = (await import('express')).default();
 		app.get('/', (req, res) => {
 			if(!services.BattleFactory) {
 				res.status(503).json({ error: 'Battle Factory is disabled.' });
@@ -770,7 +775,7 @@ export default class BattleFactory {
 		return app;
 	}
 
-	/** Returns an array of missing dependencies. This will only run on startup, so blocking operations are fine. */
+	/** Returns an array of missing dependencies. */
 	static checkDependencies(skipBuild: boolean): Promise<string[]> {
 		const missingDependencies: string[] = [];
 		const DIR_REPOS = path.normalize('../..');

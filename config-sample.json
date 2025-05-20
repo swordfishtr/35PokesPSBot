@@ -26,6 +26,7 @@
 	"liveUsageStats": {
 		"enable": false,
 		"debug": true,
+		"format": "",
 		"serve": false,
 		"interval": 0
 	}

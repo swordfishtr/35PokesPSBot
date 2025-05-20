@@ -13,9 +13,9 @@ import { Temporal } from '@js-temporal/polyfill';
 import { fsLog, importJSON, PATH_CONFIG, PATH_CRASHLOG, PATH_MISCLOG, PATH_PS_FACTORYSETS, PATH_PS_INDEX, Services, shell } from './globals.js';
 
 process.chdir(import.meta.dirname);
-process.on('uncaughtExceptionMonitor', (err, origin) => {
+process.on('uncaughtExceptionMonitor', (e, origin) => {
 	const time = Temporal.Now.zonedDateTimeISO().toLocaleString();
-	const crashlog = `${time} ${origin}\n${err.stack}\n\n`;
+	const crashlog = `${time} ${origin}\n${e.stack}\n\n`;
 	fsLog(PATH_CRASHLOG, crashlog);
 });
 process.on('exit', (code) => {
@@ -29,7 +29,7 @@ try {
 	const git = await shell('git -v');
 	log(`Git found: ${git.slice(0, -1)}`);
 }
-catch(err) {
+catch(e) {
 	log(`Git not found. This project depends on remote repositories; please install git.`);
 	process.exit(1);
 }
@@ -89,7 +89,7 @@ async function loadBattleFactory() {
 	}
 	else if(app){
 		// @ts-expect-error Some typing nonsense
-		app.use('/bf', BattleFactory.serve(services));
+		app.use('/bf', await BattleFactory.serve(services));
 	}
 
 	services.BattleFactory = new BattleFactory();
