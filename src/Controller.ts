@@ -158,7 +158,7 @@ async function loadLiveUsageStats() {
 	}
 	else if(app){
 		// @ts-expect-error Some typing nonsense
-		app.use('/bf', await LiveUsageStats.serve(services));
+		app.use('/lus', await LiveUsageStats.serve(services));
 	}
 
 	services.LiveUsageStats = new LiveUsageStats();
