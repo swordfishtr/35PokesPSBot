@@ -66,11 +66,11 @@ async function checkDependency(dep: Dependency) {
 	switch(dep) {
 		case '35PokesIndex': {
 			if(dependencies[dep]) break;
-			checkInstall35PokesIndex();
+			await checkInstall35PokesIndex();
 			break;
 		}
 		case 'pokemon-showdown': {
-			checkInstallPS();
+			await checkInstallPS();
 			break;
 		}
 	}
@@ -101,7 +101,7 @@ async function loadBattleFactory() {
 
 	const BattleFactory = (await import('./BattleFactory.js')).default;
 	for(const x of BattleFactory.dependencies) {
-		checkDependency(x);
+		await checkDependency(x);
 	}
 	BattleFactory.prelaunch();
 
@@ -138,7 +138,7 @@ async function loadBattleFactory() {
 }
 
 async function loadLiveUsageStats() {
-	const { enable, maxRestartCount, maxRestartTimeframe } = importJSON(PATH_CONFIG).LiveUsageStats;
+	const { enable, maxRestartCount, maxRestartTimeframe } = importJSON(PATH_CONFIG).liveUsageStats;
 	if(!enable) {
 		log('Live Usage Stats is not enabled.');
 		return;
@@ -146,7 +146,7 @@ async function loadLiveUsageStats() {
 
 	const LiveUsageStats = (await import('./LiveUsageStats.js')).default;
 	for(const x of LiveUsageStats.dependencies) {
-		checkDependency(x);
+		await checkDependency(x);
 	}
 
 	// On first run, Express stack needs to be configured;
