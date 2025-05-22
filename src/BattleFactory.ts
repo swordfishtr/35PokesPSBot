@@ -6,7 +6,9 @@
  * debug - whether to display informational logs.
  * skipBuild - whether to skip pokemon-showdown dependency checks and build.
  * Make sure to provide the files manually. Required for systems with <1GB of memory.
- * maxRestarts - max number of disconnections within 30 minutes before the autorestart stops.
+ * maxRestartCount - max number of disconnections within maxRestartTimeframe.
+ * If this is surpassed, the service won't restart automatically.
+ * maxRestartTimeframe - Timeframe in minutes for maxRestartCount.
  * serve - whether to expose data via http server under /bf.
  * interval - in seconds, how often to attempt matchmaking.
  * sudoers - list of showdown usernames to allow admin actions.
@@ -20,7 +22,7 @@ import { styleText } from 'node:util';
 import { Temporal } from '@js-temporal/polyfill';
 import PSBot from './PSBot.js';
 import {
-	Auth, FactorySet, fsLog, importJSON, LogSign, PATH_CONFIG, PATH_MISCLOG, PATH_PS_FACTORYSETS, Predicate,
+	Auth, Dependency, FactorySet, fsLog, importJSON, LogSign, PATH_CONFIG, PATH_MISCLOG, PATH_PS_FACTORYSETS, Predicate,
 	PredicateRejection, PredicateVar, Services, shell, ShutdownRejection, ServiceState, TimeoutRejection
 } from './globals.js';
 
@@ -51,6 +53,8 @@ type ChallengeTable = { [user: string]: Challenge };
 // TODO: fill out empty errors.
 
 export default class BattleFactory {
+
+	static dependencies: Dependency[] = ['35PokesIndex', 'pokemon-showdown'];
 
 	#state: ServiceState = ServiceState.NEW;
 	get state() { return this.#state; }
@@ -609,12 +613,12 @@ export default class BattleFactory {
 			case 'formats': {
 				return Object.keys(this.factorySets).map((x) => x.endsWith('.txt') ? x.slice(0, -4) : x).join(', ');
 			}
-			case 'update': {
+			/* case 'update': {
 				if(!this.sudoers.includes(user)) return 'Not allowed.';
 				const { skipBuild } = importJSON(PATH_CONFIG).battleFactory;
 				const problems = await BattleFactory.checkDependencies(skipBuild);
 				return `Done! skipBuild: ${skipBuild}, problems: ${problems.join(', ') || 'none'}. Run hotpatch next.`;
-			}
+			} */
 			case 'hotpatch': {
 				if(!this.sudoers.includes(user)) return 'Not allowed.';
 				this.loadConfig();
@@ -775,123 +779,14 @@ export default class BattleFactory {
 		return app;
 	}
 
-	/** Returns an array of missing dependencies. */
-	static checkDependencies(skipBuild: boolean): Promise<string[]> {
-		const missingDependencies: string[] = [];
-		const DIR_REPOS = path.normalize('../..');
-		const SRC_INDEX = 'https://github.com/swordfishtr/35PokesIndex';
+	static prelaunch() {
 		const DIR_INDEX = path.normalize('../../35PokesIndex');
-		const SRC_PS = 'https://github.com/smogon/pokemon-showdown';
 		const DIR_PS = path.normalize('../../pokemon-showdown');
-
-		// 35PokesIndex
-		console.log('Checking availability of 35PokesIndex ...');
-		const DEP_INDEX_PS = shell('git remote get-url origin', DIR_INDEX)
-		.then((remote) => {
-			remote = remote.slice(0, -1);
-			console.log(remote);
-			if(remote === SRC_INDEX) {
-				console.log('Available.');
-				return true;
-			}
-			console.log('Incorrect repository. Deleting and cloning ...');
-			return false;
-		})
-		.catch((e) => {
-			if(![128, 'ENOENT'].includes(e.code)) throw e;
-			console.log('Unavailable. Cloning ...');
-			return false;
-		})
-		.then((repoExists) => {
-			if(!repoExists) {
-				fs.rmSync(DIR_INDEX, { recursive: true, force: true });
-				return shell(`git clone ${SRC_INDEX}`, DIR_REPOS).then(() => true);
-			}
-			return false;
-		})
-		.then((repoIsNew) => {
-			if(!repoIsNew) {
-				console.log('Checking updates ...');
-				return shell('git pull', DIR_INDEX);
-			}
-		})
-		.then(() => {
-			console.log('Done.');
-			return true;
-		})
-		.catch((e) => {
-			console.log(`Error ${e.code ?? '?'} occurred during dependency check of 35PokesIndex: ${e.message ?? '?'}`);
-			if(e.code === 128) console.log('Try using fix/docker-git-fix.sh');
-			missingDependencies.push('35PokesIndex');
-			return false;
-		})
-		// pokemon-showdown
-		.then((success) => {
-			if(!success) throw new Error();
-			console.log('Checking availability of pokemon-showdown ...');
-			return shell('git remote get-url origin', DIR_PS);
-		})
-		.then((remote) => {
-			remote = remote.slice(0, -1);
-			console.log(remote);
-			if(remote === SRC_PS) {
-				console.log('Available.');
-				return true;
-			}
-			console.log('Incorrect repository. Deleting and cloning ...');
-			return false;
-		})
-		.catch((e) => {
-			if(![128, 'ENOENT'].includes(e.code)) throw e;
-			console.log('Unavailable. Cloning ...');
-			return false;
-		})
-		.then((repoExists) => {
-			if(!repoExists) {
-				fs.rmSync(DIR_INDEX, { recursive: true, force: true });
-				return shell(`git clone ${SRC_PS}`, DIR_REPOS).then(() => true);
-			}
-			return false;
-		})
-		.then((repoIsNew) => {
-			if(!repoIsNew) {
-				console.log('Checking updates ...');
-				return shell('git pull', DIR_PS);
-			}
-		})
-		.then(() => {
-			if(skipBuild) {
-				console.log('Skipping dependency checks ...');
-				return;
-			}
-			console.log('Checking dependencies ...');
-			return shell('npm install --omit=optional', DIR_PS);
-		})
-		.then(() => {
-			if(skipBuild) {
-				console.log('Skipping build ...');
-				return;
-			}
-			console.log('Running build ...');
-			return shell('node build', DIR_PS);
-		})
-		.then(() => {
-			console.log('Copying custom factory-sets.json ...');
-			fs.copyFileSync(
-				path.normalize(`${DIR_INDEX}/factory-sets.json`),
-				path.normalize(`${DIR_PS}/dist/data/random-battles/gen9/factory-sets.json`)
-			);
-			console.log('Done.');
-		})
-		.catch((e) => {
-			console.log(`Error ${e.code ?? '?'} occurred during dependency check of pokemon-showdown: ${e.message ?? '?'}`);
-			missingDependencies.push('pokemon-showdown');
-		});
-
-		return Promise.all([
-			DEP_INDEX_PS
-		])
-		.then(() => missingDependencies);
+		console.log('Inserting custom factory-sets.json ...');
+		fs.copyFileSync(
+			path.normalize(`${DIR_INDEX}/factory-sets.json`),
+			path.normalize(`${DIR_PS}/dist/data/random-battles/gen9/factory-sets.json`)
+		);
 	}
 
 }

@@ -5,6 +5,9 @@
  * enable - whether Controller should run this service.
  * debug - whether to display informational logs.
  * format - format to collect usage stats for.
+ * maxRestartCount - max number of disconnections within maxRestartTimeframe.
+ * If this is surpassed, the service won't restart automatically.
+ * maxRestartTimeframe - Timeframe in minutes for maxRestartCount.
  * serve - expose API that responds with usage stats (requires express).
  * interval - in seconds, how often to check public battles.
  */
@@ -14,10 +17,12 @@ import { styleText } from 'node:util';
 import { Temporal } from '@js-temporal/polyfill';
 import PSBot from './PSBot.js';
 import {
-	fsLog, importJSON, PATH_CONFIG, PATH_LUS, PATH_MISCLOG, Predicate, PredicateVar, Services, ServiceState, sqlargs, TimeoutRejection
+	Dependency, fsLog, importJSON, PATH_CONFIG, PATH_LUS, PATH_MISCLOG, Predicate, PredicateVar, Services, ServiceState, sqlargs, TimeoutRejection
 } from './globals.js';
 
 export default class LiveUsageStats {
+
+	static dependencies: Dependency[] = ['pokemon-showdown'];
 
 	#state: ServiceState = ServiceState.NEW;
 	get state() { return this.#state; }
@@ -26,7 +31,6 @@ export default class LiveUsageStats {
 
 	format = 'gen9nationaldex35pokes';
 
-	Dex?: typeof import('../../pokemon-showdown/dist/sim/index.js').Dex;
 	toID?: typeof import('../../pokemon-showdown/dist/sim/index.js').toID;
 
 	db?: DatabaseSync;
@@ -58,7 +62,6 @@ export default class LiveUsageStats {
 		if(format) this.format = format;
 
 		const PS = (await import('../../pokemon-showdown/dist/sim/index.js')).default;
-		this.Dex = PS.Dex;
 		this.toID = PS.toID;
 
 		this.#state = ServiceState.INIT;
@@ -68,7 +71,7 @@ export default class LiveUsageStats {
 		if(this.#state !== ServiceState.INIT) throw new Error();
 
 		this.bot = new PSBot('Live Usage Stats Bot', this.debug);
-		this.bot.onDisconnect = this.shutdown; // Too extreme a measure for this one
+		this.bot.onDisconnect = this.shutdown;
 
 		try {
 			await this.bot.connect();
@@ -104,6 +107,12 @@ export default class LiveUsageStats {
 		console.log(buf);
 	}
 
+	dump(): string {
+		let buf = 'Live Usage Stats Dump\n';
+		buf += `state: ${this.#state}\n`;
+		return buf;
+	}
+
 	async queryBattles() {
 		if(this.#state !== ServiceState.ON) throw new Error();
 
@@ -115,6 +124,7 @@ export default class LiveUsageStats {
 
 		// These will be run one after another, not in parallel.
 		for(const room in rooms) {
+			if(!rooms[room].minElo) continue;
 			if(this.sql.checkBattle!.get(sqlargs(room))) continue;
 
 			this.log(`New battle: ${room} ...`);
@@ -235,7 +245,24 @@ ON (pb.room_id=b.id);
 	static async serve(services: Services): Promise<Express.Application> {
 		const app = (await import('express')).default();
 		app.get('/', (req, res) => {
-			res.send('Live Usage Stats go here');
+			if(!services.LiveUsageStats || services.LiveUsageStats.state < ServiceState.INIT) {
+				res.status(503).json({ error: 'Live Usage Stats is disabled.' });
+				return;
+			}
+			res.send(`<a href="/lus/full">full</a><br />`);
+		});
+		app.get('/full', (req, res) => {
+			if(!services.LiveUsageStats || services.LiveUsageStats.state < ServiceState.INIT) {
+				res.status(503).json({ error: 'Live Usage Stats is disabled.' });
+				return;
+			}
+			const raw = services.LiveUsageStats.sql.getFullUsage!.all();
+			const out: any = {};
+			for(const { room, species } of raw) {
+				out[room as any] ??= [];
+				out[room as any].push(species);
+			}
+			res.json(out);
 		});
 		return app;
 	}

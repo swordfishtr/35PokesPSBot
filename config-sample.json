@@ -8,8 +8,8 @@
 	"battleFactory": {
 		"enable": false,
 		"debug": true,
-		"skipBuild": false,
-		"maxRestarts": 0,
+		"maxRestartCount": 0,
+		"maxRestartTimeframe": 0,
 		"serve": false,
 		"interval": 0,
 		"sudoers": [],
@@ -27,7 +27,12 @@
 		"enable": false,
 		"debug": true,
 		"format": "",
+		"maxRestartCount": 0,
+		"maxRestartTimeframe": 0,
 		"serve": false,
 		"interval": 0
+	},
+	"dependencies": {
+		"skipBuild": false
 	}
 }

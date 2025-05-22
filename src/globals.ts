@@ -31,12 +31,15 @@ export function sqlargs(...args: any[]): any {
 
 export interface Auth {
 	name: string,
-	pass: string
+	pass: string,
 }
 
 export interface Services {
-	BattleFactory?: import('./BattleFactory').default
+	BattleFactory: import('./BattleFactory').default,
+	LiveUsageStats: import('./LiveUsageStats').default,
 }
+
+export type Dependency = '35PokesIndex' | 'pokemon-showdown';
 
 /**
  * Resolved with the matching message.
@@ -53,7 +56,7 @@ export enum LogSign {
 	OUT = '>>',
 	INFO = '::',
 	WARN = '!!',
-	ERR = 'XX'
+	ERR = 'XX',
 }
 
 export enum BotState {
@@ -62,20 +65,15 @@ export enum BotState {
 	ONLINE = 2,
 	LOGIN = 3,
 	USERNAME = 4,
-	DISCONNECTED = 5
+	DISCONNECTED = 5,
 }
 
 export enum ServiceState {
 	NEW = 0,
 	INIT = 1,
 	ON = 2,
-	OFF = 3
+	OFF = 3,
 }
-
-/* export enum RejectReason {
-	TIMEOUT = 'Timed out.',
-	DISCONNECT = 'Disconnected.'
-} */
 
 /** Thrown when a predicate returns false. */
 export class PredicateRejection extends Error {
