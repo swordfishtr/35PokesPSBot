@@ -27,9 +27,10 @@
 		"enable": false,
 		"debug": true,
 		"format": "",
+		"rankedOnly": false,
+		"interval": 0,
 		"maxRestartCount": 0,
 		"maxRestartTimeframe": 0,
-		"serve": false,
-		"interval": 0
+		"serve": false
 	}
 }

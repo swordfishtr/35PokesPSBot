@@ -5,11 +5,12 @@
  * enable - whether Controller should run this service.
  * debug - whether to display informational logs.
  * format - format to collect usage stats for.
+ * rankedOnly - whether to ignore unranked (i.e. challenge) battles.
+ * interval - in seconds, how often to check public battles.
  * maxRestartCount - max number of disconnections within maxRestartTimeframe.
  * If this is surpassed, the service won't restart automatically.
  * maxRestartTimeframe - Timeframe in minutes for maxRestartCount.
  * serve - expose API that responds with usage stats (requires express).
- * interval - in seconds, how often to check public battles.
  */
 
 import { DatabaseSync, StatementSync } from 'node:sqlite';
@@ -27,6 +28,7 @@ export default class LiveUsageStats {
 	#state = ServiceState.NEW;
 	debug = false;
 	format = 'gen9nationaldex35pokes';
+	rankedOnly = false;
 
 	toID?: typeof import('../../pokemon-showdown/dist/sim/index.js').toID;
 
@@ -42,9 +44,10 @@ export default class LiveUsageStats {
 		this.db = new DatabaseSync(PATH_LUS);
 		this.db.exec(this.sql.createTables);
 
-		const { debug, format } = importJSON(PATH_CONFIG).liveUsageStats;
+		const { debug, format, rankedOnly } = importJSON(PATH_CONFIG).liveUsageStats;
 		this.debug = !!debug;
 		if(format) this.format = format;
+		this.rankedOnly = rankedOnly;
 
 		const PS = (await import('../../pokemon-showdown/dist/sim/index.js')).default;
 		this.toID = PS.toID;
@@ -109,7 +112,7 @@ export default class LiveUsageStats {
 
 		// These will be run one after another, not in parallel.
 		for(const room in rooms) {
-			if(!rooms[room].minElo) continue;
+			if(this.rankedOnly && !rooms[room].minElo) continue;
 			if(this.sql.checkBattle!.get(sqlargs(room))) continue;
 
 			this.log(`New battle: ${room} ...`);
