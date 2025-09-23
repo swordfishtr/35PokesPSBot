@@ -31,8 +31,5 @@
 		"maxRestartTimeframe": 0,
 		"serve": false,
 		"interval": 0
-	},
-	"dependencies": {
-		"skipBuild": false
 	}
 }

@@ -17,41 +17,26 @@ import { styleText } from 'node:util';
 import { Temporal } from '@js-temporal/polyfill';
 import PSBot from './PSBot.js';
 import {
-	Dependency, fsLog, importJSON, PATH_CONFIG, PATH_LUS, PATH_MISCLOG, Predicate, PredicateVar, Services, ServiceState, sqlargs, TimeoutRejection
+	fsLog, importJSON, PATH_CONFIG, PATH_LUS, PATH_MISCLOG, Predicate, PredicateVar, Services, ServiceState, sqlargs, TimeoutRejection
 } from './globals.js';
 
 export default class LiveUsageStats {
 
-	static dependencies: Dependency[] = ['pokemon-showdown'];
+	static dependencies: string[] = ['../../pokemon-showdown'];
 
-	#state: ServiceState = ServiceState.NEW;
-	get state() { return this.#state; }
-
-	debug: boolean = false;
-
+	#state = ServiceState.NEW;
+	debug = false;
 	format = 'gen9nationaldex35pokes';
 
 	toID?: typeof import('../../pokemon-showdown/dist/sim/index.js').toID;
 
 	db?: DatabaseSync;
-
 	bot?: PSBot;
-
 	interval?: NodeJS.Timeout;
 
 	onShutdown?: () => void;
-
-	constructor() {
-		this.init = this.init.bind(this);
-		this.connect = this.connect.bind(this);
-		this.shutdown = this.shutdown.bind(this);
-		this.log = this.log.bind(this);
-		this.queryBattles = this.queryBattles.bind(this);
-		this.RESPONSE = this.RESPONSE.bind(this);
-		this.INITBATTLE = this.INITBATTLE.bind(this);
-	}
 	
-	async init() {
+	readonly init = async () => {
 		if(this.#state !== ServiceState.NEW) throw new Error();
 
 		this.db = new DatabaseSync(PATH_LUS);
@@ -65,9 +50,9 @@ export default class LiveUsageStats {
 		this.toID = PS.toID;
 
 		this.#state = ServiceState.INIT;
-	}
+	};
 
-	async connect() {
+	readonly connect = async () => {
 		if(this.#state !== ServiceState.INIT) throw new Error();
 
 		this.bot = new PSBot('Live Usage Stats Bot', this.debug);
@@ -83,9 +68,9 @@ export default class LiveUsageStats {
 			this.shutdown();
 			throw e;
 		}
-	}
+	};
 
-	shutdown() {
+	readonly shutdown = () => {
 		if(this.#state === ServiceState.OFF) return;
 		if(![ServiceState.INIT, ServiceState.ON].includes(this.#state)) throw new Error();
 
@@ -96,24 +81,24 @@ export default class LiveUsageStats {
 		if(this.onShutdown) this.onShutdown();
 
 		this.#state = ServiceState.OFF;
-	}
+	};
 
-	log(msg: string) {
+	readonly log = (msg: string) => {
 		if(!this.debug) return;
 		const time = Temporal.Now.zonedDateTimeISO().toLocaleString();
 		let buf = `${time} :: LUS :: ${msg}\n`;
 		fsLog(PATH_MISCLOG, buf);
 		buf = styleText(['bold'], buf);
 		console.log(buf);
-	}
+	};
 
-	dump(): string {
+	readonly dump = () => {
 		let buf = 'Live Usage Stats Dump\n';
 		buf += `state: ${this.#state}\n`;
 		return buf;
-	}
+	};
 
-	async queryBattles() {
+	readonly queryBattles = async () => {
 		if(this.#state !== ServiceState.ON) throw new Error();
 
 		this.log('Query battles ...');
@@ -164,7 +149,7 @@ export default class LiveUsageStats {
 				this.log(`Could not join ${room} - skipping.`);
 			}
 		}
-	}
+	};
 
 	readonly RESPONSE: Predicate = (msg) => {
 		const data = msg.split('|', 4);
@@ -245,14 +230,14 @@ ON (pb.room_id=b.id);
 	static async serve(services: Services): Promise<Express.Application> {
 		const app = (await import('express')).default();
 		app.get('/', (req, res) => {
-			if(!services.LiveUsageStats || services.LiveUsageStats.state < ServiceState.INIT) {
+			if(!services.LiveUsageStats) {
 				res.status(503).json({ error: 'Live Usage Stats is disabled.' });
 				return;
 			}
 			res.send(`<a href="/lus/full">full</a><br />`);
 		});
 		app.get('/full', (req, res) => {
-			if(!services.LiveUsageStats || services.LiveUsageStats.state < ServiceState.INIT) {
+			if(!services.LiveUsageStats) {
 				res.status(503).json({ error: 'Live Usage Stats is disabled.' });
 				return;
 			}

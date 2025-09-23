@@ -10,10 +10,8 @@
 
 import readline from 'readline';
 import { Temporal } from '@js-temporal/polyfill';
-import { Dependency, fsLog, importJSON, PATH_CONFIG, PATH_CRASHLOG, PATH_MISCLOG, Services, shell } from './globals.js';
-import { checkInstall35PokesIndex, checkInstallPS } from './DependencyScripts.js';
+import { checkDependencies, fsLog, importJSON, looseKeys, PATH_CONFIG, PATH_CRASHLOG, PATH_MISCLOG, Services } from './globals.js';
 
-process.chdir(import.meta.dirname);
 process.on('uncaughtExceptionMonitor', (e, origin) => {
 	const time = Temporal.Now.zonedDateTimeISO().toLocaleString();
 	const crashlog = `${time} ${origin}\n${e.stack}\n\n`;
@@ -22,23 +20,13 @@ process.on('uncaughtExceptionMonitor', (e, origin) => {
 process.on('exit', (code) => {
 	fsLog(PATH_MISCLOG, `Process exiting with code ${code} ...\n`);
 });
+process.chdir(import.meta.dirname);
 
 log('Welcome to 35Pokes Pokemon Showdown Bot Controller!');
 log(`Project path: ${import.meta.dirname}`);
-// Project dependencies
-try {
-	const git = await shell('git -v');
-	log(`Git found: ${git.slice(0, -1)}`);
-}
-catch(e) {
-	log(`Git not found. This project depends on remote repositories; please install git.`);
-	process.exit(1);
-}
-log('To exit gracefully, enter exit.');
 
-const services: Partial<Services> = {};
+const services: Services = {};
 const servicesStopped: { [k in keyof Services]?: number } = {};
-const dependencies: { [k in Dependency]?: true } = {};
 
 // Shielding these configs because we don't want them to stick around in memory.
 const { app, port } = await (async () => {
@@ -49,136 +37,109 @@ const { app, port } = await (async () => {
 })();
 let server: any;
 
-const rl = readline.createInterface(process.stdin, process.stdout);
+const load = {
+	async all() {
+		for(const service of looseKeys(this)) {
+			if(service === 'all') continue;
+			await this[service]();
+		}
+		if(app && !server && importJSON(PATH_CONFIG).server.enable) {
+			server = app.listen(port, () => {
+				log(`Express listening on port ${port}.`);
+			});
+		}
+	},
+	async BattleFactory() {
+		const { enable, maxRestartCount, maxRestartTimeframe } = importJSON(PATH_CONFIG).battleFactory;
+		if(!enable) {
+			log('Battle Factory is not enabled.');
+			return;
+		}
 
-await loadAll();
+		const BattleFactory = (await import('./BattleFactory.js')).default;
+		checkDependencies(BattleFactory.dependencies);
+		BattleFactory.prelaunch();
+
+		// On first run, Express stack needs to be configured;
+		// on non-first runs, the previous instance needs to be shut down.
+		if(services.BattleFactory) {
+			delete services.BattleFactory.onShutdown;
+			services.BattleFactory.shutdown();
+		}
+		else if(app){
+			app.use('/bf', await BattleFactory.serve(services) as any);
+		}
+
+		services.BattleFactory = new BattleFactory();
+		servicesStopped.BattleFactory ??= 0;
+		services.BattleFactory.onShutdown = () => {
+			servicesStopped.BattleFactory!++;
+			setTimeout(() => {
+				servicesStopped.BattleFactory!--;
+			}, maxRestartTimeframe * 60 * 1000);
+			if(servicesStopped.BattleFactory! > maxRestartCount) {
+				log('Battle Factory has stopped too often recently. To manually restart it enter restart bf.');
+				return;
+			}
+			log('Battle Factory has stopped, restarting in 5 minutes.');
+			setTimeout(() => this.BattleFactory(), 5 * 60 * 1000);
+		};
+
+		await services.BattleFactory.init();
+		await services.BattleFactory.connect();
+		log('Battle Factory has started.');
+	},
+	async LiveUsageStats() {
+		const { enable, maxRestartCount, maxRestartTimeframe } = importJSON(PATH_CONFIG).liveUsageStats;
+		if(!enable) {
+			log('Live Usage Stats is not enabled.');
+			return;
+		}
+
+		const LiveUsageStats = (await import('./LiveUsageStats.js')).default;
+		checkDependencies(LiveUsageStats.dependencies);
+
+		// On first run, Express stack needs to be configured;
+		// on non-first runs, the previous instance needs to be shut down.
+		if(services.LiveUsageStats) {
+			delete services.LiveUsageStats.onShutdown;
+			services.LiveUsageStats.shutdown();
+		}
+		else if(app){
+			app.use('/lus', await LiveUsageStats.serve(services) as any);
+		}
+
+		services.LiveUsageStats = new LiveUsageStats();
+		servicesStopped.LiveUsageStats ??= 0;
+		services.LiveUsageStats.onShutdown = () => {
+			servicesStopped.LiveUsageStats!++;
+			setTimeout(() => {
+				servicesStopped.LiveUsageStats!--;
+			}, maxRestartTimeframe * 60 * 1000);
+			if(servicesStopped.LiveUsageStats! > maxRestartCount) {
+				log('Live Usage Stats has stopped too often recently. To manually restart it enter restart bf.');
+				return;
+			}
+			log('Live Usage Stats has stopped, restarting in 5 minutes.');
+			setTimeout(() => this.LiveUsageStats(), 5 * 60 * 1000);
+		};
+
+		await services.LiveUsageStats.init();
+		await services.LiveUsageStats.connect();
+		log('Live Usage Stats has started.');
+	}
+};
+
+await load.all();
+const rl = readline.createInterface(process.stdin, process.stdout);
 rl.on('line', consoleInput);
+log('All loaded. Accepting input - enter help for commands.')
 
 function log(msg: string) {
 	if(msg.includes('\n')) msg = `=== === ===\n${msg}\n=== === ===`;
 	else msg = `=== ${msg} ===`;
 	console.log(msg);
 	fsLog(PATH_MISCLOG, `${msg}\n`);
-}
-
-async function checkDependency(dep: Dependency) {
-	if(dependencies[dep]) return;
-	switch(dep) {
-		case '35PokesIndex': {
-			if(dependencies[dep]) break;
-			await checkInstall35PokesIndex();
-			break;
-		}
-		case 'pokemon-showdown': {
-			await checkInstallPS();
-			break;
-		}
-	}
-	dependencies[dep] = true;
-}
-
-async function loadAll() {
-	const funcs: (() => Promise<any>)[] = [
-		loadBattleFactory,
-		loadLiveUsageStats,
-	];
-	for(const x of funcs) {
-		await x();
-	}
-	if(app && !server && importJSON(PATH_CONFIG).server.enable) {
-		server = app.listen(port, () => {
-			log(`Express listening on port ${port}.`);
-		});
-	}
-}
-
-async function loadBattleFactory() {
-	const { enable, maxRestartCount, maxRestartTimeframe } = importJSON(PATH_CONFIG).battleFactory;
-	if(!enable) {
-		log('Battle Factory is not enabled.');
-		return;
-	}
-
-	const BattleFactory = (await import('./BattleFactory.js')).default;
-	for(const x of BattleFactory.dependencies) {
-		await checkDependency(x);
-	}
-	BattleFactory.prelaunch();
-
-	// On first run, Express stack needs to be configured;
-	// on non-first runs, the previous instance needs to be shut down.
-	// Otherwise these are unrelated actions; don't get confused.
-	if(services.BattleFactory) {
-		delete services.BattleFactory.onShutdown;
-		services.BattleFactory.shutdown();
-	}
-	else if(app){
-		// @ts-expect-error Some typing nonsense
-		app.use('/bf', await BattleFactory.serve(services));
-	}
-
-	services.BattleFactory = new BattleFactory();
-	servicesStopped.BattleFactory ??= 0;
-	services.BattleFactory.onShutdown = () => {
-		servicesStopped.BattleFactory!++;
-		setTimeout(() => {
-			servicesStopped.BattleFactory!--;
-		}, maxRestartTimeframe * 60 * 1000);
-		if(servicesStopped.BattleFactory! > maxRestartCount) {
-			log('Battle Factory has stopped too often recently. To manually restart it enter restart bf.');
-			return;
-		}
-		log('Battle Factory has stopped, restarting in 5 minutes.');
-		setTimeout(() => loadBattleFactory(), 5 * 60 * 1000);
-	};
-
-	await services.BattleFactory.init();
-	await services.BattleFactory.connect();
-	log('Battle Factory has started.');
-}
-
-async function loadLiveUsageStats() {
-	const { enable, maxRestartCount, maxRestartTimeframe } = importJSON(PATH_CONFIG).liveUsageStats;
-	if(!enable) {
-		log('Live Usage Stats is not enabled.');
-		return;
-	}
-
-	const LiveUsageStats = (await import('./LiveUsageStats.js')).default;
-	for(const x of LiveUsageStats.dependencies) {
-		await checkDependency(x);
-	}
-
-	// On first run, Express stack needs to be configured;
-	// on non-first runs, the previous instance needs to be shut down.
-	// Otherwise these are unrelated actions; don't get confused.
-	if(services.LiveUsageStats) {
-		delete services.LiveUsageStats.onShutdown;
-		services.LiveUsageStats.shutdown();
-	}
-	else if(app){
-		// @ts-expect-error Some typing nonsense
-		app.use('/lus', await LiveUsageStats.serve(services));
-	}
-
-	services.LiveUsageStats = new LiveUsageStats();
-	servicesStopped.LiveUsageStats ??= 0;
-	services.LiveUsageStats.onShutdown = () => {
-		servicesStopped.LiveUsageStats!++;
-		setTimeout(() => {
-			servicesStopped.LiveUsageStats!--;
-		}, maxRestartTimeframe * 60 * 1000);
-		if(servicesStopped.LiveUsageStats! > maxRestartCount) {
-			log('Live Usage Stats has stopped too often recently. To manually restart it enter restart bf.');
-			return;
-		}
-		log('Live Usage Stats has stopped, restarting in 5 minutes.');
-		setTimeout(() => loadLiveUsageStats(), 5 * 60 * 1000);
-	};
-
-	await services.LiveUsageStats.init();
-	await services.LiveUsageStats.connect();
-	log('Live Usage Stats has started.');
 }
 
 async function consoleInput(input: string) {
@@ -200,14 +161,14 @@ async function consoleInput(input: string) {
 				case 'everything':
 				case 'all': {
 					log('Restarting everything.');
-					loadAll();
+					load.all();
 					return;
 				}
 				case 'battlefactory':
 				case 'factory':
 				case 'bf': {
 					log('Restarting Battle Factory.');
-					loadBattleFactory();
+					load.BattleFactory();
 					return;
 				}
 				default: {
@@ -236,6 +197,7 @@ async function consoleInput(input: string) {
 			log('Controller Commands (type and enter):');
 			log('exit: Shutdown everything and exit. Alias: quit, bye, q');
 			log('restart service?|all: Restart service or else everything. Alias: r');
+			log('dump: Prints debug information.');
 			return;
 		}
 	}

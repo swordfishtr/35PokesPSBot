@@ -2,6 +2,19 @@ import fs from 'fs';
 import path from 'path';
 import child_process from 'child_process';
 
+/** relaxed Object.keys */
+export function	looseKeys<O extends {}>(o: O) {
+		type Keys = keyof O;
+		return Object.keys(o) as Keys[];
+	}
+
+	/** relaxed Object.entries */
+export function	looseEntries<O extends {}>(o: O) {
+		type Keys = keyof O;
+		type Values = typeof o[Keys];
+		return Object.entries(o) as [Keys, Values][];
+	}
+
 export function importJSON(m: string) {
 	return JSON.parse(fs.readFileSync(m, { encoding: 'utf-8' }));
 }
@@ -20,6 +33,14 @@ export function shell(cmd: string, cwd?: string): Promise<string> {
 	});
 }
 
+export function checkDependencies(deps: string[]) {
+	for(const dep of deps) {
+		if(!fs.existsSync(path.normalize(dep))) {
+			throw new Error(`Missing dependency at ${dep}`);
+		}
+	}
+}
+
 /**
  * In NodeJS SQLite implementation, prepared statements with numbered parameters take
  * arguments from an array. But there is a gotcha: if array index 0 is defined, even
@@ -35,11 +56,9 @@ export interface Auth {
 }
 
 export interface Services {
-	BattleFactory: import('./BattleFactory').default,
-	LiveUsageStats: import('./LiveUsageStats').default,
+	BattleFactory?: import('./BattleFactory').default,
+	LiveUsageStats?: import('./LiveUsageStats').default,
 }
-
-export type Dependency = '35PokesIndex' | 'pokemon-showdown';
 
 /**
  * Resolved with the matching message.

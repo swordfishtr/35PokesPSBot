@@ -10,7 +10,4 @@ export { default as PSBot } from './PSBot.js';
 
 // 35Pokes specific services
 export { default as BattleFactory } from './BattleFactory.js';
-export { default as liveUsageStats } from './LiveUsageStats.js';
-
-// Helper functions for managing dependencies
-export * as DependencyScripts from './DependencyScripts.js';
+export { default as LiveUsageStats } from './LiveUsageStats.js';

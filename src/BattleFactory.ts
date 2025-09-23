@@ -4,7 +4,6 @@
  * Configuration details:
  * enable - whether Controller should run this service.
  * debug - whether to display informational logs.
- * skipBuild - whether to skip pokemon-showdown dependency checks and build.
  * Make sure to provide the files manually. Required for systems with <1GB of memory.
  * maxRestartCount - max number of disconnections within maxRestartTimeframe.
  * If this is surpassed, the service won't restart automatically.
@@ -22,8 +21,8 @@ import { styleText } from 'node:util';
 import { Temporal } from '@js-temporal/polyfill';
 import PSBot from './PSBot.js';
 import {
-	Auth, Dependency, FactorySet, fsLog, importJSON, LogSign, PATH_CONFIG, PATH_MISCLOG, PATH_PS_FACTORYSETS, Predicate,
-	PredicateRejection, PredicateVar, Services, shell, ShutdownRejection, ServiceState, TimeoutRejection
+	Auth, FactorySet, fsLog, importJSON, LogSign, PATH_CONFIG, PATH_MISCLOG, PATH_PS_FACTORYSETS, Predicate,
+	PredicateRejection, PredicateVar, Services, ServiceState,
 } from './globals.js';
 
 interface Battle {
@@ -54,12 +53,10 @@ type ChallengeTable = { [user: string]: Challenge };
 
 export default class BattleFactory {
 
-	static dependencies: Dependency[] = ['35PokesIndex', 'pokemon-showdown'];
+	static readonly dependencies: string[] = ['../../35PokesIndex', '../../pokemon-showdown'];
 
-	#state: ServiceState = ServiceState.NEW;
-	get state() { return this.#state; }
-
-	debug: boolean = false;
+	#state = ServiceState.NEW;
+	debug = false;
 	readonly sudoers: string[] = [];
 
 	readonly queue: string[] = [];
@@ -101,40 +98,13 @@ export default class BattleFactory {
 
 	onShutdown?: () => void;
 
-	constructor() {
-		this.init = this.init.bind(this);
-		this.loadConfig = this.loadConfig.bind(this);
-		this.connect = this.connect.bind(this);
-		this.shutdown = this.shutdown.bind(this);
-		this.log = this.log.bind(this);
-		this.dump = this.dump.bind(this);
-		this.tryMatchmaking = this.tryMatchmaking.bind(this);
-		this.ensurePlayersOnline = this.ensurePlayersOnline.bind(this);
-		this.genTeams = this.genTeams.bind(this);
-		this.prepBattle = this.prepBattle.bind(this);
-		this.startBattle = this.startBattle.bind(this);
-		this.receive = this.receive.bind(this);
-		this.rejectChallenges = this.rejectChallenges.bind(this);
-		this.respondPM = this.respondPM.bind(this)
-		this.respondBR = this.respondBR.bind(this);
-		this.runCommand = this.runCommand.bind(this);
-		this.#BATTLE_1 = this.#BATTLE_1.bind(this);
-		this.#BATTLE_2 = this.#BATTLE_2.bind(this);
-		this.#BATTLE_3 = this.#BATTLE_3.bind(this);
-		this.#BATTLE_4 = this.#BATTLE_4.bind(this);
-		this.#BATTLE_6 = this.#BATTLE_6.bind(this);
-		this.#BOTCMD_1 = this.#BOTCMD_1.bind(this);
-		this.#BOTCMD_2 = this.#BOTCMD_2.bind(this);
-		this.#BOTCMD_3 = this.#BOTCMD_3.bind(this);
-	}
-
-	async init() {
+	readonly init = async () => {
 		if(this.#state !== ServiceState.NEW) throw new Error();
 		await this.loadConfig();
 		this.#state = ServiceState.INIT;
-	}
+	};
 
-	async loadConfig() {
+	readonly loadConfig = async () => {
 		this.factorySets = importJSON(PATH_PS_FACTORYSETS);
 
 		const PS = (await import('../../pokemon-showdown/dist/sim/index.js')).default;
@@ -157,9 +127,9 @@ export default class BattleFactory {
 		this.fullBan.push(...banned);
 		this.sudoers.length = 0;
 		this.sudoers.push(...sudoers);
-	}
+	};
 
-	async connect() {
+	readonly connect = async () => {
 		if(this.#state !== ServiceState.INIT) throw new Error();
 
 		this.bot1 = new PSBot('35 Factory Primary Bot', this.debug);
@@ -184,9 +154,9 @@ export default class BattleFactory {
 			this.shutdown();
 			throw e;
 		}
-	}
+	};
 
-	shutdown() {
+	readonly shutdown = () => {
 		if(this.#state === ServiceState.OFF) return;
 		if(![ServiceState.INIT, ServiceState.ON].includes(this.#state)) throw new Error();
 
@@ -200,9 +170,9 @@ export default class BattleFactory {
 		if(this.onShutdown) this.onShutdown();
 
 		this.#state = ServiceState.OFF;
-	}
+	};
 
-	log(msg: string, sign: Extract<LogSign, LogSign.ERR | LogSign.INFO | LogSign.WARN>) {
+	readonly log = (msg: string, sign: Extract<LogSign, LogSign.ERR | LogSign.INFO | LogSign.WARN>) => {
 		if(!this.debug) return;
 		const time = Temporal.Now.zonedDateTimeISO().toLocaleString();
 		let buf = `${time} :: BF :: ${msg}\n`;
@@ -211,10 +181,10 @@ export default class BattleFactory {
 		else if(sign === LogSign.WARN) buf = styleText(['yellow', 'bold'], buf);
 		else buf = styleText(['red', 'bold'], buf);
 		console.log(buf);
-	}
+	};
 
 	/** Dump debugging data. */
-	dump(): string {
+	readonly dump = () => {
 		let buf = 'Battle Factory Dump\n';
 		buf += `state: ${this.#state}\n`;
 		buf += `sudoers: ${this.sudoers.join(', ')}\n`
@@ -229,10 +199,10 @@ export default class BattleFactory {
 		buf += `bot2 listeners:\n${this.bot2?.ls.map((x) => x.description).join(',\n')};\n`;
 		buf += `teamErrors:\n${this.teamErrors.join(',\n')};\n`;
 		return buf;
-	}
+	};
 
 	/** Try to generate a random format battle for users in queue. */
-	async tryMatchmaking() {
+	readonly tryMatchmaking = async () => {
 		if(this.#state !== ServiceState.ON) throw new Error();
 		if(!this.ready || this.queue.length < 2) return;
 
@@ -263,10 +233,10 @@ export default class BattleFactory {
 			const i = this.queueBan.indexOf(x);
 			if(i !== -1) this.queueBan.splice(i, 1);
 		}
-	}
+	};
 
 	/** Returns offline usernames. */
-	async ensurePlayersOnline(...usernames: string[]): Promise<string[]> {
+	readonly ensurePlayersOnline = async (...usernames: string[]): Promise<string[]> => {
 		if(this.#state !== ServiceState.ON) throw new Error();
 
 		const userids = usernames.map(this.toID!);
@@ -274,10 +244,10 @@ export default class BattleFactory {
 		const queries = userids.map((x) => this.bot1!.await(`userdetails ${x}`, this.lagGracePeriod, this.#BATTLE_1(x)));
 		const responses = await Promise.allSettled(queries);
 		return usernames.filter((x, i) => responses[i].status === 'rejected');
-	}
+	};
 
 	/** Returns all the necessary random elements for prepBattle. */
-	genTeams(amount: number, format?: string | null): GeneratedTeams {
+	readonly genTeams = (amount: number, format?: string | null): GeneratedTeams => {
 		if(![ServiceState.INIT, ServiceState.ON].includes(this.#state)) throw new Error();
 		if(amount < 1 || amount > 10 * 1000) throw new RangeError();
 
@@ -328,10 +298,10 @@ export default class BattleFactory {
 		}
 
 		return { format, isRandom, chalcode, teams };
-	}
+	};
 
 	/** Returns organized output from genTeams for genBattle. */
-	prepBattle(user1: string, user2: string, genTeams: GeneratedTeams): Battle {
+	readonly prepBattle = (user1: string, user2: string, genTeams: GeneratedTeams): Battle => {
 		if(this.#state < ServiceState.INIT) throw new Error();
 		const { teams: [team1, team2], ...misc } = genTeams;
 		return {
@@ -339,10 +309,10 @@ export default class BattleFactory {
 			side2: { username: user2, team: this.Teams!.pack(team2) },
 			...misc
 		};
-	}
+	};
 
 	/** Creates a battle and hands out invites. Returns winner or null if tie. */
-	async startBattle(battle: Battle): Promise<string | null> {
+	readonly startBattle = async (battle: Battle): Promise<string | null> => {
 		if(this.#state !== ServiceState.ON) throw new Error();
 
 		if(!this.ready) throw new Error('NOT READY!!!');
@@ -461,14 +431,14 @@ export default class BattleFactory {
 		//await this.bot1!.await('battle exit', 30, this.#BATTLE_5(room));
 
 		return end === 'win' ? winner : null;
-	}
+	};
 
-	receive(msg: string) {
+	readonly receive = (msg: string) => {
 		if(this.#state !== ServiceState.ON) throw new Error();
 		this.rejectChallenges(this.bot1!)(msg);
 		if(this.#BOTCMD_1(msg)) return this.respondPM(msg);
 		if(this.#BOTCMD_2(msg)) return this.respondBR(msg);
-	}
+	};
 
 	// Getting too fancy here ...
 	readonly rejectChallenges = (bot: PSBot) => (msg: string) => {
@@ -478,9 +448,9 @@ export default class BattleFactory {
 			const user = data[2].slice(1);
 			bot.send(`|/reject ${user}`);
 		}
-	}
+	};
 
-	async respondPM(msg: string) {
+	readonly respondPM = async (msg: string) => {
 		const data = msg.split('|', 5);
 		const user = this.toID!(data[2].slice(1));
 		const fields = data[4].split(' ');
@@ -496,9 +466,9 @@ export default class BattleFactory {
 			const outCode = outLines.map((x) => `/pm ${user}, ${x}`).join('\n');
 			this.bot1!.send(`|${outCode}`);
 		}
-	}
+	};
 
-	async respondBR(msg: string) {
+	readonly respondBR = async (msg: string) => {
 		const data = msg.split('|', 4);
 		const room = data[0].slice(1, -1);
 		const user = this.toID!(data[2].slice(1));
@@ -509,10 +479,10 @@ export default class BattleFactory {
 
 		if(out.includes('\n')) this.bot1!.send(`${room}|!code ${out}`);
 		else this.bot1!.send(`${room}|${out}`);
-	}
+	};
 
 	// Refer to default for expected fields
-	async runCommand(user: string, ...fields: string[]): Promise<string> {
+	readonly runCommand = async (user: string, ...fields: string[]): Promise<string> => {
 		switch(fields[0].toLowerCase()) {
 			case 'in':
 			case 'can': {
@@ -613,12 +583,6 @@ export default class BattleFactory {
 			case 'formats': {
 				return Object.keys(this.factorySets).map((x) => x.endsWith('.txt') ? x.slice(0, -4) : x).join(', ');
 			}
-			/* case 'update': {
-				if(!this.sudoers.includes(user)) return 'Not allowed.';
-				const { skipBuild } = importJSON(PATH_CONFIG).battleFactory;
-				const problems = await BattleFactory.checkDependencies(skipBuild);
-				return `Done! skipBuild: ${skipBuild}, problems: ${problems.join(', ') || 'none'}. Run hotpatch next.`;
-			} */
 			case 'hotpatch': {
 				if(!this.sudoers.includes(user)) return 'Not allowed.';
 				this.loadConfig();
@@ -632,7 +596,7 @@ export default class BattleFactory {
 			'bf species format: Query sets in format. Alias: set, sets\n\n' +
 			'formats: Get the list of rollable formats.';
 		}
-	}
+	};
 
 	readonly #BATTLE_1: PredicateVar = (val) => (msg) => {
 		const data = msg.split('|', 4);
@@ -640,7 +604,7 @@ export default class BattleFactory {
 		const details = JSON.parse(data[3]);
 		if(details.userid !== val) return null;
 		return !!details.rooms && !!details.autoconfirmed;
-	}
+	};
 
 	readonly #BATTLE_2: PredicateVar = (val) => (msg) => {
 		const data = msg.split('|', 5);
@@ -649,7 +613,7 @@ export default class BattleFactory {
 		data[3]?.slice(1) === this.bot2!.username &&
 		data[4]?.startsWith(`/challenge ${val}`) ||
 		null;
-	}
+	};
 
 	readonly #BATTLE_3: Predicate = (msg) => {
 		const data = msg.split('\n', 3).map((x) => x.split('|', 3));
@@ -659,14 +623,14 @@ export default class BattleFactory {
 		data[2]?.[1] === 'title' &&
 		data[2]?.[2] === `${this.bot1!.username} vs. ${this.bot2!.username}` ||
 		null;
-	}
+	};
 
 	readonly #BATTLE_4: PredicateVar = (val) => (msg) => {
 		const data = msg.split('\n').map((x) => x.split('|', 2));
 		return data[0][0].slice(1) === val &&
 		(['win', 'tie'] as any[]).includes(data.pop()?.[1]) ||
 		null;
-	}
+	};
 
 	/* readonly #BATTLE_5: PredicateVar = (val) => (msg) => {
 		const data = msg.split('\n', 2).map((x) => x.split('|', 2));
@@ -685,7 +649,7 @@ export default class BattleFactory {
 		if(data[4] === '/text You accepted the battle invite') return true;
 		if(data[4] === `/nonotify ${user} rejected the challenge.`) return false;
 		return null;
-	}
+	};
 
 	// pm
 	readonly #BOTCMD_1: Predicate = (msg) => {
@@ -698,7 +662,7 @@ export default class BattleFactory {
 		// Ignore '/challenge' and other commands.
 		data[4]?.[0] !== '/' ||
 		null;
-	}
+	};
 
 	// battle room
 	readonly #BOTCMD_2: Predicate = (msg) => {
@@ -708,7 +672,7 @@ export default class BattleFactory {
 		// Bot command prefix in battle rooms
 		data[1]?.[3]?.[0] === ';' ||
 		null;
-	}
+	};
 
 	// challenges and invites
 	readonly #BOTCMD_3: PredicateVar = (val) => (msg) => {
@@ -721,7 +685,7 @@ export default class BattleFactory {
 		// Ws clients receive '/challenge' whenever accepting or rejecting occurs; that is noise.
 		data[4]?.startsWith('/challenge ') ||
 		null;
-	}
+	};
 
 	static factoryToPaste(species: string, data: any): string {
 		let buf = `${species} weight ${data[species].weight}`;

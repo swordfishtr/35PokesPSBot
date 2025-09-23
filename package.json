@@ -3,12 +3,20 @@
   "version": "1.0.0",
   "description": "Pokemon Showdown bot for the 35Pokes community",
   "type": "module",
-  "main": "src/index.ts",
+  "main": "dist/index.js",
   "scripts": {
     "build": "tsc"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/swordfishtr/35PokesPSBot.git"
+  },
   "author": "demirab1",
   "license": "GPL-3.0-only",
+  "bugs": {
+    "url": "https://github.com/swordfishtr/35PokesPSBot/issues"
+  },
+  "homepage": "https://github.com/swordfishtr/35PokesPSBot#readme",
   "devDependencies": {
     "@types/express": "^5.0.1",
     "@types/node": "^22.14.1",
