@@ -1,17 +1,18 @@
 {
 	"compilerOptions": {
-		"module": "ESNext",
-		"moduleResolution": "node10",
-		"target": "ESNext",
+		"module": "nodenext",
+		"moduleResolution": "nodenext",
+		"target": "es6",
 		"esModuleInterop": false,
 		"allowSyntheticDefaultImports": true,
+		"allowJs": true,
 		"alwaysStrict": true,
 		"strict": true,
 		"outDir": "./dist/",
 		"rootDir": "./src/"
 	},
 	"include": [
-		"src/*",
+		"src/**/*",
 		"../pokemon-showdown/dist/sim/global-types.d.ts"
 	]
 }

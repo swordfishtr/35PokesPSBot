@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import child_process from 'child_process';
 
+export * from './lib/35PokesIndex.js';
+
 /** relaxed Object.keys */
 export function	looseKeys<O extends {}>(o: O) {
 		type Keys = keyof O;
@@ -56,8 +58,8 @@ export interface Auth {
 }
 
 export interface Services {
-	BattleFactory?: import('./BattleFactory').default,
-	LiveUsageStats?: import('./LiveUsageStats').default,
+	BattleFactory?: import('./BattleFactory.js').default,
+	LiveUsageStats?: import('./LiveUsageStats.js').default,
 }
 
 /**
@@ -148,9 +150,8 @@ export const PATH_MISCLOG = path.join(import.meta.dirname, '..', 'misc.log');
 export const PATH_CONFIG = path.join(import.meta.dirname, '..', 'config.json');
 
 export const PATH_PS_INDEX = path.join(import.meta.dirname, '..', '..', 'pokemon-showdown', 'dist', 'sim', 'index.js');
-
 export const PATH_PS_FACTORYSETS = path.join(
 	import.meta.dirname, '..', '..', 'pokemon-showdown', 'dist', 'data', 'random-battles', 'gen9', 'factory-sets.json'
 );
 
-export const PATH_LUS = path.join(import.meta.dirname, '..', 'lus.db');
+export const PATH_LUS = path.join(import.meta.dirname, '..', 'data', 'lus.db');

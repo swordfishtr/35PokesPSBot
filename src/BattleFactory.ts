@@ -16,12 +16,11 @@
  */
 
 import fs from 'fs';
-import path from 'path';
 import { styleText } from 'node:util';
 import { Temporal } from '@js-temporal/polyfill';
 import PSBot from './PSBot.js';
 import {
-	Auth, FactorySet, fsLog, importJSON, LogSign, PATH_CONFIG, PATH_MISCLOG, PATH_PS_FACTORYSETS, Predicate,
+	Auth, FactorySet, fsLog, importJSON, LogSign, PATH_35_FACTORYSETS, PATH_CONFIG, PATH_MISCLOG, PATH_PS_FACTORYSETS, PATH_PS_INDEX, Predicate,
 	PredicateRejection, PredicateVar, Services, ServiceState,
 } from './globals.js';
 
@@ -53,7 +52,7 @@ type ChallengeTable = { [user: string]: Challenge };
 
 export default class BattleFactory {
 
-	static readonly dependencies: string[] = ['../../35PokesIndex', '../../pokemon-showdown'];
+	static readonly dependencies: string[] = [PATH_35_FACTORYSETS, '../../pokemon-showdown'];
 
 	#state = ServiceState.NEW;
 	debug = false;
@@ -107,19 +106,19 @@ export default class BattleFactory {
 	readonly loadConfig = async () => {
 		this.factorySets = importJSON(PATH_PS_FACTORYSETS);
 
-		const PS = (await import('../../pokemon-showdown/dist/sim/index.js')).default;
+		const PS = (await import(PATH_PS_INDEX)).default;
 		this.Dex = PS.Dex;
 		this.Teams = PS.Teams;
 		this.TeamValidator = PS.TeamValidator;
 		this.toID = PS.toID;
 
-		const formatBattleFactory = this.Dex.formats.get('gen9battlefactory');
-		this.factoryGenerator = this.Teams.getGenerator(formatBattleFactory);
+		const formatBattleFactory = this.Dex!.formats.get('gen9battlefactory');
+		this.factoryGenerator = this.Teams!.getGenerator(formatBattleFactory);
 
-		const format35Pokes = this.Dex.formats.get(this.chalcode);
-		const format35PokesUbers = this.Dex.formats.get(this.chalcodeUbers);
-		this.factoryValidator = new this.TeamValidator(format35Pokes);
-		this.factoryValidatorUbers = new this.TeamValidator(format35PokesUbers);
+		const format35Pokes = this.Dex!.formats.get(this.chalcode);
+		const format35PokesUbers = this.Dex!.formats.get(this.chalcodeUbers);
+		this.factoryValidator = new this.TeamValidator!(format35Pokes);
+		this.factoryValidatorUbers = new this.TeamValidator!(format35PokesUbers);
 
 		const { banned, debug, sudoers } = importJSON(PATH_CONFIG).battleFactory;
 		this.debug = !!debug;
@@ -737,20 +736,15 @@ export default class BattleFactory {
 				buf += BattleFactory.factoryToPaste(species, services.BattleFactory.factorySets[meta]);
 				buf += '\n\n';
 			}
-			buf = buf.replaceAll('\n', '<br />')
+			buf = buf.replace(/\n/g, '<br />');
 			res.send(buf);
 		});
 		return app;
 	}
 
 	static prelaunch() {
-		const DIR_INDEX = path.normalize('../../35PokesIndex');
-		const DIR_PS = path.normalize('../../pokemon-showdown');
 		console.log('Inserting custom factory-sets.json ...');
-		fs.copyFileSync(
-			path.normalize(`${DIR_INDEX}/factory-sets.json`),
-			path.normalize(`${DIR_PS}/dist/data/random-battles/gen9/factory-sets.json`)
-		);
+		fs.copyFileSync(PATH_35_FACTORYSETS, PATH_PS_FACTORYSETS);
 	}
 
 }

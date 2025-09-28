@@ -10,7 +10,7 @@
 
 import readline from 'readline';
 import { Temporal } from '@js-temporal/polyfill';
-import { checkDependencies, fsLog, importJSON, looseKeys, PATH_CONFIG, PATH_CRASHLOG, PATH_MISCLOG, Services } from './globals.js';
+import { checkDependencies, checkUpdates, fsLog, importJSON, looseKeys, PATH_CONFIG, PATH_CRASHLOG, PATH_MISCLOG, Services } from './globals.js';
 
 process.on('uncaughtExceptionMonitor', (e, origin) => {
 	const time = Temporal.Now.zonedDateTimeISO().toLocaleString();
@@ -29,7 +29,7 @@ const services: Services = {};
 const servicesStopped: { [k in keyof Services]?: number } = {};
 
 // Shielding these configs because we don't want them to stick around in memory.
-const { app, port } = await (async () => {
+const { app, port } = await (async function() {
 	const { enable, port: portNum, portEnv } = importJSON(PATH_CONFIG).server;
 	const app = enable ? (await import('express')).default() : null;
 	const port: number = portNum >= 0 ? portNum : portEnv ? process.env[portEnv] : 0;
@@ -130,10 +130,10 @@ const load = {
 	}
 };
 
-await load.all();
+await (load.all)();
 const rl = readline.createInterface(process.stdin, process.stdout);
 rl.on('line', consoleInput);
-log('All loaded. Accepting input - enter help for commands.')
+log('All loaded. Accepting input - enter help for commands.');
 
 function log(msg: string) {
 	if(msg.includes('\n')) msg = `=== === ===\n${msg}\n=== === ===`;
@@ -191,6 +191,10 @@ async function consoleInput(input: string) {
 		}
 		case 'env': {
 			log(JSON.stringify(process.env));
+			return;
+		}
+		case 'update': {
+			await checkUpdates();
 			return;
 		}
 		default: {

@@ -4,7 +4,7 @@
  * Configuration details:
  * enable - whether Controller should run this service.
  * debug - whether to display informational logs.
- * format - format to collect usage stats for.
+ * formats - formats to collect usage stats for.
  * rankedOnly - whether to ignore unranked (i.e. challenge) battles.
  * interval - in seconds, how often to check public battles.
  * maxRestartCount - max number of disconnections within maxRestartTimeframe.
@@ -18,19 +18,21 @@ import { styleText } from 'node:util';
 import { Temporal } from '@js-temporal/polyfill';
 import PSBot from './PSBot.js';
 import {
-	fsLog, importJSON, PATH_CONFIG, PATH_LUS, PATH_MISCLOG, Predicate, PredicateVar, Services, ServiceState, sqlargs, TimeoutRejection
+	fsLog, importJSON, index, PATH_35_INDEX, PATH_CONFIG, PATH_LUS, PATH_MISCLOG, PATH_PS_INDEX, Predicate,
+	PredicateVar, Services, ServiceState, sqlargs, TimeoutRejection
 } from './globals.js';
 
 export default class LiveUsageStats {
 
-	static dependencies: string[] = ['../../pokemon-showdown'];
+	static dependencies: string[] = [PATH_35_INDEX, '../../pokemon-showdown'];
 
 	#state = ServiceState.NEW;
 	debug = false;
-	format = 'gen9nationaldex35pokes';
+	formats = ['gen9nationaldex35pokes'];
 	rankedOnly = false;
 
 	toID?: typeof import('../../pokemon-showdown/dist/sim/index.js').toID;
+	Dex?: typeof import('../../pokemon-showdown/dist/sim/index.js').Dex;
 
 	db?: DatabaseSync;
 	bot?: PSBot;
@@ -44,13 +46,14 @@ export default class LiveUsageStats {
 		this.db = new DatabaseSync(PATH_LUS);
 		this.db.exec(this.sql.createTables);
 
-		const { debug, format, rankedOnly } = importJSON(PATH_CONFIG).liveUsageStats;
+		const { debug, formats, rankedOnly } = importJSON(PATH_CONFIG).liveUsageStats;
 		this.debug = !!debug;
-		if(format) this.format = format;
+		if(formats) this.formats = formats;
 		this.rankedOnly = rankedOnly;
 
-		const PS = (await import('../../pokemon-showdown/dist/sim/index.js')).default;
+		const PS = (await import(PATH_PS_INDEX)).default;
 		this.toID = PS.toID;
+		this.Dex = PS.Dex;
 
 		this.#state = ServiceState.INIT;
 	};
@@ -105,53 +108,80 @@ export default class LiveUsageStats {
 		if(this.#state !== ServiceState.ON) throw new Error();
 
 		this.log('Query battles ...');
+		for(const format of this.formats) {
 
-		this.bot!.send(`|/cmd roomlist ${this.format},none,`);
-		const roomsData = await this.bot!.await('roomlist response', 30, this.RESPONSE);
-		const { rooms } = JSON.parse(roomsData.split('|').pop()!);
+			this.bot!.send(`|/cmd roomlist ${format},none,`);
+			const roomsData = await this.bot!.await('roomlist response', 30, this.RESPONSE);
+			const { rooms } = JSON.parse(roomsData.split('|').pop()!);
 
-		// These will be run one after another, not in parallel.
-		for(const room in rooms) {
-			if(this.rankedOnly && !rooms[room].minElo) continue;
-			if(this.sql.checkBattle!.get(sqlargs(room))) continue;
+			for(const room in rooms) {
+				if(this.rankedOnly && !rooms[room].minElo) continue;
+				if(this.sql.checkBattle!.get(sqlargs(room))) continue;
 
-			this.log(`New battle: ${room} ...`);
+				this.log(`New battle: ${room} ...`);
 
-			try {
-				this.bot!.send(`|/join ${room}`);
-				const battleData = await this.bot!.await('battle join', 30, this.INITBATTLE(room));
+				try {
+					this.bot!.send(`|/join ${room}`);
+					const battleData = await this.bot!.await('battle join', 30, this.INITBATTLE(room));
+					this.bot!.send(`|/noreply /leave ${room}`);
 
-				const mons = battleData
-				.split('\n')
-				.map((x) => x.split('|', 4))
-				.filter((x) => x[1] === 'poke') // If team preview is disabled, the array will be 0 length.
-				.map((x) => x[3])
-				.map((x) => x.split(', ').shift()!) // Remove gender suffix.
-				.map(this.toID!);
+					const mons = battleData
+					.split('\n')
+					.map((x) => x.split('|', 4))
+					.filter((x) => x[1] === 'poke') // If team preview is disabled, the array will be 0 length.
+					.map((x) => x[3])
+					.map((x) => x.split(', ').shift()!) // Remove gender suffix.
+					.map(this.processPokemon)
+					.filter((x) => x);
 
-				this.bot!.send(`|/noreply /leave ${room}`);
+					if(!mons.length) {
+						this.log(`Team preview disabled in ${room} - skipping.`);
+						continue;
+					}
 
-				if(!mons.length) {
-					this.log(`Team preview disabled in ${room} - skipping.`);
-					continue;
+					this.log(`Pokemon brought: ${mons.join(', ')}.`);
+
+					const timestamp = parseInt(/\n\|t:\|(\d+)\n/.exec(battleData)!.pop()!);
+
+					const roomid = this.sql.insertBattle!.run(sqlargs(room, timestamp)).lastInsertRowid;
+
+					for(const mon of mons) {
+						this.sql.insertPokemon!.run(sqlargs(mon));
+						this.sql.insertUsage!.run(sqlargs(roomid, mon));
+					}
 				}
-
-				this.log(`Pokemon brought: ${mons.join(', ')}.`);
-
-				const timestamp = parseInt(/\n\|t:\|(\d+)\n/.exec(battleData)!.pop()!);
-
-				const roomid = this.sql.insertBattle!.run(sqlargs(room, timestamp)).lastInsertRowid;
-
-				for(const mon of mons) {
-					this.sql.insertPokemon!.run(sqlargs(mon));
-					this.sql.insertUsage!.run(sqlargs(roomid, mon));
+				catch(e) {
+					if(!(e instanceof TimeoutRejection)) throw e;
+					this.log(`Could not join ${room} - skipping.`);
 				}
 			}
-			catch(e) {
-				if(!(e instanceof TimeoutRejection)) throw e;
-				this.log(`Could not join ${room} - skipping.`);
-			}
+
 		}
+	};
+
+	// We need to:
+	// - store cosmetic formes as base formes
+	// - treat cosmetic formes in index as base formes
+	// - treat teampreview-hidden species in index as base formes
+	readonly processPokemon = (mon: string): ID => {
+		const previewHidden = [
+			'greninja', 'gourgeist', 'pumpkaboo', 'xerneas', 'silvally', 'urshifu', 'dudunsparce',
+		]
+		const species = this.Dex!.species.get(mon);
+		if(!species.exists) return '';
+
+		const baseSpecies = this.Dex!.species.get(species.baseSpecies);
+
+		if(previewHidden.includes(baseSpecies.id)) {
+			return baseSpecies.id;
+		}
+
+		// this will fail in certain cases like Vivillon
+		if(baseSpecies.cosmeticFormes?.includes(species.name)) {
+			return baseSpecies.id;
+		}
+
+		return species.id;
 	};
 
 	readonly RESPONSE: Predicate = (msg) => {
@@ -245,10 +275,38 @@ ON (pb.room_id=b.id);
 				return;
 			}
 			const raw = services.LiveUsageStats.sql.getFullUsage!.all();
-			const out: any = {};
+			const out: Record<string, string[]> = {};
 			for(const { room, species } of raw) {
 				out[room as any] ??= [];
-				out[room as any].push(species);
+				out[room as any].push(species as any);
+			}
+			res.json(out);
+		});
+		app.get('/:group/:meta', (req, res) => {
+			if(!services.LiveUsageStats) {
+				res.status(503).json({ error: 'Live Usage Stats is disabled.' });
+				return;
+			}
+			let { group, meta } = req.params;
+			if(!meta.endsWith('.txt')) meta += '.txt';
+			const format = index.metagames[group]?.[meta]
+			?.filter((x) => !x.header)
+			.map((x) => services.LiveUsageStats!.processPokemon(x.value))
+			.filter((x) => x);
+			if(!format) {
+				res.status(404).json({ error: 'Format not found.' });
+				return;
+			}
+			const raw = services.LiveUsageStats.sql.getFullUsage!.all();
+			const out: Record<string, string[]> = {};
+			for(const { room, species } of raw) {
+				out[room as any] ??= [];
+				out[room as any].push(species as any);
+			}
+			for(const room in out) {
+				if(!out[room].every((mon) => format.includes(mon as ID))) {
+					delete out[room];
+				}
 			}
 			res.json(out);
 		});
