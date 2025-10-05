@@ -3,7 +3,6 @@
  * 
  * Configuration details:
  * enable - whether Controller should run this service.
- * debug - whether to display informational logs.
  * Make sure to provide the files manually. Required for systems with <1GB of memory.
  * maxRestartCount - max number of disconnections within maxRestartTimeframe.
  * If this is surpassed, the service won't restart automatically.
@@ -55,7 +54,6 @@ export default class BattleFactory {
 	static readonly dependencies: string[] = [PATH_35_FACTORYSETS, '../../pokemon-showdown'];
 
 	#state = ServiceState.NEW;
-	debug = false;
 	readonly sudoers: string[] = [];
 
 	readonly queue: string[] = [];
@@ -120,8 +118,7 @@ export default class BattleFactory {
 		this.factoryValidator = new this.TeamValidator!(format35Pokes);
 		this.factoryValidatorUbers = new this.TeamValidator!(format35PokesUbers);
 
-		const { banned, debug, sudoers } = importJSON(PATH_CONFIG).battleFactory;
-		this.debug = !!debug;
+		const { banned, sudoers } = importJSON(PATH_CONFIG).battleFactory;
 		this.fullBan.length = 0;
 		this.fullBan.push(...banned);
 		this.sudoers.length = 0;
@@ -131,8 +128,8 @@ export default class BattleFactory {
 	readonly connect = async () => {
 		if(this.#state !== ServiceState.INIT) throw new Error();
 
-		this.bot1 = new PSBot('35 Factory Primary Bot', this.debug);
-		this.bot2 = new PSBot('35 Factory Secondary Bot', this.debug);
+		this.bot1 = new PSBot('35 Factory Primary Bot', this);
+		this.bot2 = new PSBot('35 Factory Secondary Bot', this);
 
 		this.bot1.onDisconnect = this.shutdown;
 		this.bot2.onDisconnect = this.shutdown;
@@ -172,7 +169,6 @@ export default class BattleFactory {
 	};
 
 	readonly log = (msg: string, sign: Extract<LogSign, LogSign.ERR | LogSign.INFO | LogSign.WARN>) => {
-		if(!this.debug) return;
 		const time = Temporal.Now.zonedDateTimeISO().toLocaleString();
 		let buf = `${time} :: BF :: ${msg}\n`;
 		fsLog(PATH_MISCLOG, buf);

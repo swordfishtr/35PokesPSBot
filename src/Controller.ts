@@ -10,12 +10,24 @@
 
 import readline from 'readline';
 import { Temporal } from '@js-temporal/polyfill';
-import { checkDependencies, checkUpdates, fsLog, importJSON, looseKeys, PATH_CONFIG, PATH_CRASHLOG, PATH_MISCLOG, Services } from './globals.js';
+import { checkDependencies, checkUpdates, fsLog, importJSON, looseKeys, PATH_CONFIG, PATH_CRASHLOG, PATH_MISCLOG, Services, ShutdownRejection, TimeoutRejection } from './globals.js';
 
-process.on('uncaughtExceptionMonitor', (e, origin) => {
+process.on('uncaughtException', (error, origin) => {
+	if(error instanceof ShutdownRejection) {
+		// A service is stopping abruptly to be replaced by another instance.
+		// Safe to ignore.
+		return;
+	}
+	if((error instanceof TimeoutRejection) && error.service) {
+		// A service is unable to continue due to missing an expected message from the websocket.
+		// Stop it to be replaced with another instance.
+		error.service.shutdown();
+		return;
+	}
 	const time = Temporal.Now.zonedDateTimeISO().toLocaleString();
-	const crashlog = `${time} ${origin}\n${e.stack}\n\n`;
+	const crashlog = `${time} ${origin}\n${error.stack}\n\n`;
 	fsLog(PATH_CRASHLOG, crashlog);
+	process.exit(1);
 });
 process.on('exit', (code) => {
 	fsLog(PATH_MISCLOG, `Process exiting with code ${code} ...\n`);

@@ -7,7 +7,6 @@
 	},
 	"battleFactory": {
 		"enable": false,
-		"debug": true,
 		"maxRestartCount": 0,
 		"maxRestartTimeframe": 0,
 		"serve": false,
@@ -25,7 +24,6 @@
 	},
 	"liveUsageStats": {
 		"enable": false,
-		"debug": true,
 		"formats": [""],
 		"rankedOnly": false,
 		"interval": 0,

@@ -3,7 +3,6 @@
  * 
  * Configuration details:
  * enable - whether Controller should run this service.
- * debug - whether to display informational logs.
  * formats - formats to collect usage stats for.
  * rankedOnly - whether to ignore unranked (i.e. challenge) battles.
  * interval - in seconds, how often to check public battles.
@@ -27,7 +26,6 @@ export default class LiveUsageStats {
 	static dependencies: string[] = [PATH_35_INDEX, '../../pokemon-showdown'];
 
 	#state = ServiceState.NEW;
-	debug = false;
 	formats = ['gen9nationaldex35pokes'];
 	rankedOnly = false;
 
@@ -46,8 +44,7 @@ export default class LiveUsageStats {
 		this.db = new DatabaseSync(PATH_LUS);
 		this.db.exec(this.sql.createTables);
 
-		const { debug, formats, rankedOnly } = importJSON(PATH_CONFIG).liveUsageStats;
-		this.debug = !!debug;
+		const { formats, rankedOnly } = importJSON(PATH_CONFIG).liveUsageStats;
 		if(formats) this.formats = formats;
 		this.rankedOnly = rankedOnly;
 
@@ -61,7 +58,7 @@ export default class LiveUsageStats {
 	readonly connect = async () => {
 		if(this.#state !== ServiceState.INIT) throw new Error();
 
-		this.bot = new PSBot('Live Usage Stats Bot', this.debug);
+		this.bot = new PSBot('Live Usage Stats Bot', this);
 		this.bot.onDisconnect = this.shutdown;
 
 		try {
@@ -90,7 +87,6 @@ export default class LiveUsageStats {
 	};
 
 	readonly log = (msg: string) => {
-		if(!this.debug) return;
 		const time = Temporal.Now.zonedDateTimeISO().toLocaleString();
 		let buf = `${time} :: LUS :: ${msg}\n`;
 		fsLog(PATH_MISCLOG, buf);

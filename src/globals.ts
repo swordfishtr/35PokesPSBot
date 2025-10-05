@@ -112,10 +112,12 @@ export class PredicateRejection extends Error {
 export class TimeoutRejection extends Error {
 
 	readonly description?: string;
+	readonly service?: Services[keyof Services];
 
-	constructor(description?: string) {
+	constructor(description?: string, service?: Services[keyof Services]) {
 		super();
 		this.description = description;
+		this.service = service;
 	}
 
 }

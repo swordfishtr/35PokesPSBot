@@ -1,7 +1,7 @@
 import { styleText } from 'node:util';
 import { Temporal } from '@js-temporal/polyfill';
 import {
-	Auth, BotState, fsLog, LogSign, PATH_MISCLOG, Predicate, PredicateRejection, PredicateVar, ShutdownRejection, TimeoutRejection
+	Auth, BotState, fsLog, LogSign, PATH_MISCLOG, Predicate, PredicateRejection, PredicateVar, Services, ShutdownRejection, TimeoutRejection
 } from './globals.js';
 
 interface Listener {
@@ -17,7 +17,7 @@ export default class PSBot {
 	// #region Constants
 
 	readonly botname: string;
-	readonly debug: boolean;
+	readonly service: Services[keyof Services];
 
 	#state: BotState = BotState.NEW;
 	get state() { return this.#state; }
@@ -33,9 +33,9 @@ export default class PSBot {
 	/** Called on disconnection. Intended to be overwritten. The bot has to be replaced by a new instance. */
 	onDisconnect?: () => void;
 
-	constructor(botname: string, debug: boolean = false) {
+	constructor(botname: string, service?: Services[keyof Services]) {
 		this.botname = botname;
-		this.debug = debug;
+		this.service = service;
 
 		this.disconnect = this.disconnect.bind(this);
 		this.receive = this.receive.bind(this);
@@ -61,7 +61,6 @@ export default class PSBot {
 	}
 
 	log(msg: string, sign: LogSign = LogSign.INFO) {
-		if(!this.debug) return;
 		if(msg.length > 400) msg = `${msg.slice(0, 400 - 3)}...`;
 		const time = Temporal.Now.zonedDateTimeISO().toLocaleString();
 		let buf = `${time} :: ${this.botname} `;
@@ -122,7 +121,7 @@ export default class PSBot {
 		description = `Awaiting ${description}.`;
 		return new Promise((resolve, reject) => {
 			const timeoutID = setTimeout(() => {
-				reject(new TimeoutRejection(description));
+				reject(new TimeoutRejection(description, this.service));
 				const i = this.ls.findIndex((x) => x.predicate === predicate);
 				this.ls.splice(i, 1);
 			}, timeout * 1000);
@@ -140,7 +139,7 @@ export default class PSBot {
 		this.#ws.addEventListener('close', this.#closing, { once: true });
 
 		return new Promise((resolve, reject) => {
-			const timeoutID = setTimeout(() => reject(new TimeoutRejection('connection to websocket')), 30 * 1000);
+			const timeoutID = setTimeout(() => reject(new TimeoutRejection('connection to websocket', this.service)), 30 * 1000);
 			this.#ws!.addEventListener('open', () => {
 				clearTimeout(timeoutID);
 				this.#state = BotState.ONLINE;
